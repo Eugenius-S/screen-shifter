@@ -27,7 +27,9 @@ private struct MenuBarContent: View {
 
     var body: some View {
         Button("Apply Saved Setup") {
-            model.reportApplyUnavailable()
+            Task {
+                await model.applySavedSetup()
+            }
         }
         Button("Capture Current Setup") {
             model.prepareCapture()
