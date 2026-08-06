@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+.cache/
+.agent-cache/
+.claude/
+tmp/
+*.tmp
+*.temp
+logs/
+*.log
+# BEGIN FOUNDATION MANAGED IGNORE
+
+# END FOUNDATION MANAGED IGNORE

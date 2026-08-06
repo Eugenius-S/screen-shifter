@@ -1,0 +1,7 @@
+version: 1
+source_mode: files
+windows: ${PROJECTS_ROOT}/screen-shifter
+macos: pending
+local_only: []
+force_tracked: []
+force_local: []

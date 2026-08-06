@@ -1,0 +1,6 @@
+version: 1
+owner: Eugenius-S
+repository: screen-shifter
+scope: Personal
+source_mode: files
+visibility: private
