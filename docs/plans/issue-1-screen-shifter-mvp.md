@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress: verify the local macOS/Xcode toolchain before creating the app project.
+In progress: the local toolchain, SwiftUI app shell, and initial domain model are complete.
 
 ## Goal
 
@@ -44,6 +44,6 @@ Implement the native macOS menu bar application defined by Issue #1 and `docs/pr
 
 ## Checkpoint
 
-- Last completed: repository, Issue #1, Foundation control layer, and active plan created.
-- Current blocker: none. The local host is macOS and Xcode is installed; the SDK and command-line tools still need verification.
-- Next action: verify the Xcode toolchain, then perform step 1.
+- Last completed: repository and Issue intake; Xcode 26.6, macOS SDK 26.5, and Swift 6.3 verification; the Swift Package menu-bar shell; stable external display identity; and tested in-memory profile replacement.
+- Current blocker: automatic application of a scaling mode must be proven manually with a real external display before it can be considered supported. Upstream `displayplacer` source and licensing review also remains deferred because no external source has been incorporated.
+- Next action: implement CoreGraphics display inventory and durable local profile storage, then run the capability check with a connected external display.
