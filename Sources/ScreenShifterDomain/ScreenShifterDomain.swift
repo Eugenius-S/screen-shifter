@@ -1,3 +1,5 @@
+import Foundation
+
 public struct DisplayIdentity: Codable, Equatable, Hashable, Sendable {
 	public let storageKey: String
 
@@ -60,5 +62,39 @@ public actor InMemoryProfileStore: DisplayProfileStoring {
 
 	public func profile(for identity: DisplayIdentity) -> DisplayProfile? {
 		profiles[identity]
+	}
+}
+
+public actor UserDefaultsProfileStore: DisplayProfileStoring {
+	private let defaults: UserDefaults
+	private let storageKey: String
+
+	public init(
+		suiteName: String? = nil,
+		storageKey: String = "savedDisplayProfiles"
+	) {
+		self.defaults = suiteName.flatMap(UserDefaults.init(suiteName:)) ?? .standard
+		self.storageKey = storageKey
+	}
+
+	public func save(_ profile: DisplayProfile) {
+		var profiles = decodedProfiles()
+		profiles[profile.displayIdentity.storageKey] = profile
+
+		if let encodedProfiles = try? JSONEncoder().encode(profiles) {
+			defaults.set(encodedProfiles, forKey: storageKey)
+		}
+	}
+
+	public func profile(for identity: DisplayIdentity) -> DisplayProfile? {
+		decodedProfiles()[identity.storageKey]
+	}
+
+	private func decodedProfiles() -> [String: DisplayProfile] {
+		guard let encodedProfiles = defaults.data(forKey: storageKey) else {
+			return [:]
+		}
+
+		return (try? JSONDecoder().decode([String: DisplayProfile].self, from: encodedProfiles)) ?? [:]
 	}
 }
