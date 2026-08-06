@@ -33,6 +33,51 @@ public struct ConnectedDisplay: Equatable, Sendable {
     public let availableModes: [DisplayModeDescriptor]
 }
 
+public enum ProfileModeSelector {
+    public static func matchingMode(
+        for profile: DisplayProfile,
+        availableModes: [DisplayModeDescriptor],
+        requiresMaximumPhysicalResolution: Bool
+    ) -> DisplayModeDescriptor? {
+        let matchingModes = availableModes.filter { mode in
+            mode.logicalWidth == profile.logicalWidth
+                && mode.logicalHeight == profile.logicalHeight
+                && mode.isHiDPI == profile.isHiDPI
+        }
+
+        guard requiresMaximumPhysicalResolution else {
+            return matchingModes.first
+        }
+
+        guard let maximumPixelWidth = availableModes.map(\.pixelWidth).max(),
+              let maximumPixelHeight = availableModes.map(\.pixelHeight).max()
+        else {
+            return nil
+        }
+
+        return matchingModes.first { mode in
+            mode.pixelWidth == maximumPixelWidth && mode.pixelHeight == maximumPixelHeight
+        }
+    }
+}
+
+public enum ProfileCapturePlanner {
+    public static func profiles(for displays: [ConnectedDisplay]) -> [DisplayProfile] {
+        displays.compactMap { display in
+            guard let currentMode = display.currentMode else {
+                return nil
+            }
+
+            return DisplayProfile(
+                displayIdentity: display.identity,
+                logicalWidth: currentMode.logicalWidth,
+                logicalHeight: currentMode.logicalHeight,
+                isHiDPI: currentMode.isHiDPI
+            )
+        }
+    }
+}
+
 public enum DisplayInventoryError: Error, Equatable, Sendable {
     case activeDisplayListUnavailable(Int32)
 }
