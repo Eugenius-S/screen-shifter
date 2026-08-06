@@ -4,6 +4,7 @@
 .cache/
 .agent-cache/
 .claude/
+.vscode/
 .build/
 tmp/
 *.tmp
