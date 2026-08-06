@@ -33,6 +33,21 @@ public struct ConnectedDisplay: Equatable, Sendable {
     public let availableModes: [DisplayModeDescriptor]
 }
 
+private func displayModeDescriptor(for mode: CGDisplayMode) -> DisplayModeDescriptor {
+    let logicalWidth = UInt32(mode.width)
+    let logicalHeight = UInt32(mode.height)
+    let pixelWidth = UInt32(mode.pixelWidth)
+    let pixelHeight = UInt32(mode.pixelHeight)
+
+    return DisplayModeDescriptor(
+        pixelWidth: pixelWidth,
+        pixelHeight: pixelHeight,
+        logicalWidth: logicalWidth,
+        logicalHeight: logicalHeight,
+        isHiDPI: pixelWidth > logicalWidth || pixelHeight > logicalHeight
+    )
+}
+
 public enum ProfileModeSelector {
     public static func matchingMode(
         for profile: DisplayProfile,
@@ -74,6 +89,78 @@ public enum ProfileCapturePlanner {
                 logicalHeight: currentMode.logicalHeight,
                 isHiDPI: currentMode.isHiDPI
             )
+        }
+    }
+}
+
+public enum DisplayApplicationDecision: Equatable, Sendable {
+    case alreadyApplied
+    case apply(DisplayModeDescriptor)
+    case unavailable
+}
+
+public enum DisplayApplicationPlanner {
+    public static func decision(
+        for profile: DisplayProfile,
+        display: ConnectedDisplay
+    ) -> DisplayApplicationDecision {
+        if let currentMode = display.currentMode,
+           currentMode.logicalWidth == profile.logicalWidth,
+           currentMode.logicalHeight == profile.logicalHeight,
+           currentMode.isHiDPI == profile.isHiDPI
+        {
+            return .alreadyApplied
+        }
+
+        guard let desiredMode = ProfileModeSelector.matchingMode(
+            for: profile,
+            availableModes: display.availableModes,
+            requiresMaximumPhysicalResolution: !display.isBuiltIn
+        ) else {
+            return .unavailable
+        }
+
+        return .apply(desiredMode)
+    }
+}
+
+public enum DisplayApplicationOutcome: Equatable, Sendable {
+    case applied
+    case alreadyApplied
+    case unavailable
+}
+
+public enum DisplayModeApplicationError: Error, Equatable, Sendable {
+    case modeUnavailable
+    case modeChangeFailed(Int32)
+}
+
+@MainActor
+public struct SystemDisplayModeApplier {
+    public init() {}
+
+    public func apply(
+        _ profile: DisplayProfile,
+        to display: ConnectedDisplay
+    ) throws -> DisplayApplicationOutcome {
+        switch DisplayApplicationPlanner.decision(for: profile, display: display) {
+        case .alreadyApplied:
+            return .alreadyApplied
+        case .unavailable:
+            return .unavailable
+        case let .apply(desiredMode):
+            guard let nativeMode = (CGDisplayCopyAllDisplayModes(display.displayID, nil) as? [CGDisplayMode])?
+                .first(where: { displayModeDescriptor(for: $0) == desiredMode })
+            else {
+                throw DisplayModeApplicationError.modeUnavailable
+            }
+
+            let result = CGDisplaySetDisplayMode(display.displayID, nativeMode, nil)
+            guard result == .success else {
+                throw DisplayModeApplicationError.modeChangeFailed(result.rawValue)
+            }
+
+            return .applied
         }
     }
 }
@@ -120,14 +207,14 @@ public struct SystemDisplayInventory {
                 physicalHeightMillimeters: UInt32(displaySize.height.rounded())
             )
         let availableModes = (CGDisplayCopyAllDisplayModes(displayID, nil) as? [CGDisplayMode] ?? [])
-            .map(modeDescriptor(for:))
+                .map(displayModeDescriptor(for:))
 
         return ConnectedDisplay(
             displayID: displayID,
             identity: identity,
             name: displayName,
             isBuiltIn: isBuiltIn,
-            currentMode: CGDisplayCopyDisplayMode(displayID).map(modeDescriptor(for:)),
+            currentMode: CGDisplayCopyDisplayMode(displayID).map(displayModeDescriptor(for:)),
             availableModes: availableModes
         )
     }
@@ -138,18 +225,4 @@ public struct SystemDisplayInventory {
         return serialNumber == 0 ? nil : serialNumber
     }
 
-    private func modeDescriptor(for mode: CGDisplayMode) -> DisplayModeDescriptor {
-        let logicalWidth = UInt32(mode.width)
-        let logicalHeight = UInt32(mode.height)
-        let pixelWidth = UInt32(mode.pixelWidth)
-        let pixelHeight = UInt32(mode.pixelHeight)
-
-        return DisplayModeDescriptor(
-            pixelWidth: pixelWidth,
-            pixelHeight: pixelHeight,
-            logicalWidth: logicalWidth,
-            logicalHeight: logicalHeight,
-            isHiDPI: pixelWidth > logicalWidth || pixelHeight > logicalHeight
-        )
-    }
 }
