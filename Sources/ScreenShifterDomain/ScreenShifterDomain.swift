@@ -7,6 +7,8 @@ public struct DisplayIdentity: Codable, Equatable, Hashable, Sendable {
 		self.storageKey = storageKey
 	}
 
+	public static let builtIn = DisplayIdentity(storageKey: "builtin")
+
 	public static func external(
 		vendorID: UInt32,
 		productID: UInt32,
