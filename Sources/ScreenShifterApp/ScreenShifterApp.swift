@@ -20,6 +20,33 @@ struct ScreenShifterApp: App {
     }
 }
 
+@MainActor
+private final class SettingsWindowController {
+    static let shared = SettingsWindowController()
+
+    private var window: NSWindow?
+
+    func show(model: ScreenShifterModel) {
+        if let window {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let hostingController = NSHostingController(rootView: SettingsView(model: model))
+        let window = NSWindow(contentViewController: hostingController)
+        window.title = "Screen Shifter Settings"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(NSSize(width: 420, height: 600))
+        window.isReleasedWhenClosed = false
+        window.center()
+        self.window = window
+
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+}
+
 private struct MenuBarContent: View {
     @ObservedObject var model: ScreenShifterModel
     @Binding var automationPaused: Bool
@@ -40,7 +67,11 @@ private struct MenuBarContent: View {
 
         Divider()
 
-        SettingsLink()
+        Button {
+            SettingsWindowController.shared.show(model: model)
+        } label: {
+            Label("Settings...", systemImage: "gearshape")
+        }
         Button("Quit") {
             NSApplication.shared.terminate(nil)
         }
