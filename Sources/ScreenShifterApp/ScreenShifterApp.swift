@@ -3,7 +3,6 @@ import SwiftUI
 
 @main
 struct ScreenShifterApp: App {
-    @AppStorage("automationPaused") private var automationPaused = false
     @StateObject private var model = ScreenShifterModel()
 
     init() {
@@ -12,7 +11,7 @@ struct ScreenShifterApp: App {
 
     var body: some Scene {
         MenuBarExtra("Screen Shifter", systemImage: "display.2") {
-            MenuBarContent(model: model, automationPaused: $automationPaused)
+            MenuBarContent(model: model, automationPaused: $model.automationPaused)
         }
 
         Settings {

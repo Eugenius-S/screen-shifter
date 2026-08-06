@@ -1,3 +1,4 @@
+@preconcurrency import AppKit
 import Combine
 import DisplayCore
 import ScreenShifterDomain
@@ -10,9 +11,27 @@ final class ScreenShifterModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var captureMessage: String?
     @Published var isCaptureConfirmationPresented = false
+    @Published var automationPaused: Bool {
+        didSet {
+            UserDefaults.standard.set(automationPaused, forKey: "automationPaused")
+        }
+    }
 
     private let inventory = SystemDisplayInventory()
     private let profileStore = UserDefaultsProfileStore()
+    private var notificationTokens: [NSObjectProtocol] = []
+    private var scheduledAutomation: Task<Void, Never>?
+    private var cooldownUntil: Date?
+    private var wakeProtectionUntil: Date?
+
+    init() {
+        automationPaused = UserDefaults.standard.bool(forKey: "automationPaused")
+        registerAutomationObservers()
+    }
+
+    deinit {
+        notificationTokens.forEach(NotificationCenter.default.removeObserver)
+    }
 
     func refresh() async {
         do {
@@ -49,7 +68,20 @@ final class ScreenShifterModel: ObservableObject {
         captureMessage = "Saved \(profiles.count) display profile\(profiles.count == 1 ? "" : "s")."
     }
 
-    func applySavedSetup() async {
+    func applySavedSetup(isAutomatic: Bool = false) async {
+        if isAutomatic {
+            let permission = AutomationPolicy.permission(
+                isPaused: automationPaused,
+                now: Date(),
+                cooldownUntil: cooldownUntil,
+                wakeProtectionUntil: wakeProtectionUntil
+            )
+            guard permission == .allowed else {
+                return
+            }
+            cooldownUntil = Date().addingTimeInterval(3)
+        }
+
         do {
             displays = try inventory.connectedDisplays()
         } catch {
@@ -88,9 +120,62 @@ final class ScreenShifterModel: ObservableObject {
 
         if errors.isEmpty {
             errorMessage = nil
-            captureMessage = "Applied \(appliedCount) profile\(appliedCount == 1 ? "" : "s"); \(unchangedCount) already matched; \(unavailableCount) unavailable."
+            if !isAutomatic {
+                captureMessage = "Applied \(appliedCount) profile\(appliedCount == 1 ? "" : "s"); \(unchangedCount) already matched; \(unavailableCount) unavailable."
+            }
         } else {
             errorMessage = "Could not apply profiles for: \(errors.joined(separator: ", "))."
+        }
+    }
+
+    private func registerAutomationObservers() {
+        let notificationCenter = NotificationCenter.default
+        notificationTokens = [
+            notificationCenter.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.scheduleAutomationAfterDisplayChange()
+                }
+            },
+            notificationCenter.addObserver(
+                forName: NSWorkspace.didWakeNotification,
+                object: NSWorkspace.shared,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.protectAutomationAfterWake()
+                }
+            }
+        ]
+    }
+
+    private func protectAutomationAfterWake() {
+        wakeProtectionUntil = Date().addingTimeInterval(3)
+        scheduledAutomation?.cancel()
+        scheduledAutomation = nil
+    }
+
+    private func scheduleAutomationAfterDisplayChange() {
+        let permission = AutomationPolicy.permission(
+            isPaused: automationPaused,
+            now: Date(),
+            cooldownUntil: cooldownUntil,
+            wakeProtectionUntil: wakeProtectionUntil
+        )
+        guard permission == .allowed else {
+            return
+        }
+
+        scheduledAutomation?.cancel()
+        scheduledAutomation = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else {
+                return
+            }
+            await self?.applySavedSetup(isAutomatic: true)
         }
     }
 }
