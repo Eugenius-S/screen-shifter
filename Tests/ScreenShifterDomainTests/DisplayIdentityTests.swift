@@ -73,7 +73,9 @@ final class DisplayIdentityTests: XCTestCase {
 
         let reloadedStore = UserDefaultsProfileStore(suiteName: suiteName)
         let restoredProfile = await reloadedStore.profile(for: identity)
+        let savedProfiles = await reloadedStore.profiles()
 
         XCTAssertEqual(restoredProfile, profile)
+        XCTAssertEqual(savedProfiles, [profile])
     }
 }

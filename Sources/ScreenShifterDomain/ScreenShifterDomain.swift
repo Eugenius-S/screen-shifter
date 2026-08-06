@@ -51,19 +51,26 @@ public struct DisplayProfile: Codable, Equatable, Sendable {
 public protocol DisplayProfileStoring: Sendable {
 	func save(_ profile: DisplayProfile) async
 	func profile(for identity: DisplayIdentity) async -> DisplayProfile?
+	func profiles() async -> [DisplayProfile]
 }
 
 public actor InMemoryProfileStore: DisplayProfileStoring {
-	private var profiles: [DisplayIdentity: DisplayProfile] = [:]
+	private var storedProfiles: [DisplayIdentity: DisplayProfile] = [:]
 
 	public init() {}
 
 	public func save(_ profile: DisplayProfile) {
-		profiles[profile.displayIdentity] = profile
+		storedProfiles[profile.displayIdentity] = profile
 	}
 
 	public func profile(for identity: DisplayIdentity) -> DisplayProfile? {
-		profiles[identity]
+		storedProfiles[identity]
+	}
+
+	public func profiles() -> [DisplayProfile] {
+		storedProfiles.values.sorted {
+			$0.displayIdentity.storageKey < $1.displayIdentity.storageKey
+		}
 	}
 }
 
@@ -90,6 +97,12 @@ public actor UserDefaultsProfileStore: DisplayProfileStoring {
 
 	public func profile(for identity: DisplayIdentity) -> DisplayProfile? {
 		decodedProfiles()[identity.storageKey]
+	}
+
+	public func profiles() -> [DisplayProfile] {
+		decodedProfiles().values.sorted {
+			$0.displayIdentity.storageKey < $1.displayIdentity.storageKey
+		}
 	}
 
 	private func decodedProfiles() -> [String: DisplayProfile] {
