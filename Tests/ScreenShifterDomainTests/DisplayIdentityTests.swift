@@ -78,4 +78,43 @@ final class DisplayIdentityTests: XCTestCase {
         XCTAssertEqual(restoredProfile, profile)
         XCTAssertEqual(savedProfiles, [profile])
     }
+
+    func testProfileStoreRemovesProfileForDisplay() async {
+        let store = InMemoryProfileStore()
+        let profile = DisplayProfile(
+            displayIdentity: .builtIn,
+            logicalWidth: 1512,
+            logicalHeight: 982,
+            isHiDPI: true
+        )
+
+        await store.save(profile)
+        await store.remove(for: .builtIn)
+
+        let removedProfile = await store.profile(for: .builtIn)
+
+        XCTAssertNil(removedProfile)
+    }
+
+    func testLocalLogStorePersistsEntriesAndCanClearThem() async throws {
+        let logURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ScreenShifterTests.\(UUID().uuidString).log")
+        defer {
+            try? FileManager.default.removeItem(at: logURL)
+        }
+
+        let store = LocalLogStore(fileURL: logURL)
+        try await store.append(level: .error, message: "Mode unavailable")
+
+        let logText = try await store.text()
+
+        XCTAssertTrue(logText.contains("ERROR Mode unavailable"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: logURL.path))
+
+        try await store.clear()
+
+        let clearedText = try await store.text()
+
+        XCTAssertEqual(clearedText, "")
+    }
 }

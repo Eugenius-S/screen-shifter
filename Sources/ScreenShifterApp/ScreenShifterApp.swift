@@ -57,12 +57,21 @@ private struct MenuBarContent: View {
         } message: {
             Text("This will replace saved profiles for \(model.captureCandidates.count) connected display\(model.captureCandidates.count == 1 ? "" : "s").")
         }
+        .alert("Reset Display to Default", isPresented: $model.isResetConfirmationPresented) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset", role: .destructive) {
+                Task {
+                    await model.confirmReset()
+                }
+            }
+        } message: {
+            Text("This removes the saved profile for \(model.resetCandidate?.name ?? "this display") and restores the system default scaling.")
+        }
     }
 }
 
 private struct SettingsView: View {
     @ObservedObject var model: ScreenShifterModel
-    @AppStorage("launchAtLoginEnabled") private var launchAtLoginEnabled = false
 
     var body: some View {
         Form {
@@ -71,7 +80,14 @@ private struct SettingsView: View {
                     Text("No displays detected.")
                 } else {
                     ForEach(model.displays, id: \.displayID) { display in
-                        Text(display.name)
+                        HStack {
+                            Text(display.name)
+                            Spacer()
+                            Button("Reset to Default") {
+                                model.prepareReset(for: display)
+                            }
+                            .disabled(!model.savedProfiles.contains { $0.displayIdentity == display.identity })
+                        }
                     }
                 }
 
@@ -103,8 +119,34 @@ private struct SettingsView: View {
                 }
             }
 
+            Section("Local Log") {
+                TextEditor(text: .constant(model.logText))
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(minHeight: 140)
+
+                HStack {
+                    Button("Copy Logs") {
+                        model.copyLogs()
+                    }
+                    Button("Clear Logs") {
+                        Task {
+                            await model.clearLogs()
+                        }
+                    }
+                    Button("Open Log File") {
+                        model.openLogFile()
+                    }
+                }
+            }
+
             Section {
-                Toggle("Launch at Login", isOn: $launchAtLoginEnabled)
+                Toggle(
+                    "Launch at Login",
+                    isOn: Binding(
+                        get: { model.launchAtLoginEnabled },
+                        set: { model.setLaunchAtLogin($0) }
+                    )
+                )
             }
         }
         .formStyle(.grouped)

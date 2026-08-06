@@ -2,6 +2,7 @@
 import Combine
 import DisplayCore
 import ScreenShifterDomain
+import ServiceManagement
 
 @MainActor
 final class ScreenShifterModel: ObservableObject {
@@ -10,7 +11,11 @@ final class ScreenShifterModel: ObservableObject {
     @Published private(set) var captureCandidates: [DisplayProfile] = []
     @Published private(set) var errorMessage: String?
     @Published private(set) var captureMessage: String?
+    @Published private(set) var logText = ""
     @Published var isCaptureConfirmationPresented = false
+    @Published var isResetConfirmationPresented = false
+    @Published private(set) var resetCandidate: ConnectedDisplay?
+    @Published private(set) var launchAtLoginEnabled: Bool
     @Published var automationPaused: Bool {
         didSet {
             UserDefaults.standard.set(automationPaused, forKey: "automationPaused")
@@ -19,6 +24,7 @@ final class ScreenShifterModel: ObservableObject {
 
     private let inventory = SystemDisplayInventory()
     private let profileStore = UserDefaultsProfileStore()
+    private let logStore = LocalLogStore()
     private var notificationTokens: [NSObjectProtocol] = []
     private var scheduledAutomation: Task<Void, Never>?
     private var cooldownUntil: Date?
@@ -26,6 +32,7 @@ final class ScreenShifterModel: ObservableObject {
 
     init() {
         automationPaused = UserDefaults.standard.bool(forKey: "automationPaused")
+        launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
         registerAutomationObservers()
     }
 
@@ -42,6 +49,7 @@ final class ScreenShifterModel: ObservableObject {
         }
 
         savedProfiles = await profileStore.profiles()
+        await refreshLogs()
     }
 
     func prepareCapture() {
@@ -66,6 +74,35 @@ final class ScreenShifterModel: ObservableObject {
         savedProfiles = await profileStore.profiles()
         captureCandidates = []
         captureMessage = "Saved \(profiles.count) display profile\(profiles.count == 1 ? "" : "s")."
+        await record(level: .info, message: captureMessage ?? "Saved display profiles.")
+    }
+
+    func prepareReset(for display: ConnectedDisplay) {
+        guard savedProfiles.contains(where: { $0.displayIdentity == display.identity }) else {
+            return
+        }
+
+        resetCandidate = display
+        isResetConfirmationPresented = true
+    }
+
+    func confirmReset() async {
+        guard let display = resetCandidate else {
+            return
+        }
+
+        do {
+            try SystemDisplayModeApplier().reset(display)
+            await profileStore.remove(for: display.identity)
+            savedProfiles = await profileStore.profiles()
+            resetCandidate = nil
+            isResetConfirmationPresented = false
+            captureMessage = "Reset \(display.name) to the system default."
+            await record(level: .info, message: captureMessage ?? "Reset display to the system default.")
+        } catch {
+            errorMessage = "Could not reset \(display.name) to the system default."
+            await record(level: .error, message: errorMessage ?? "Could not reset display.")
+        }
     }
 
     func applySavedSetup(isAutomatic: Bool = false) async {
@@ -86,6 +123,7 @@ final class ScreenShifterModel: ObservableObject {
             displays = try inventory.connectedDisplays()
         } catch {
             errorMessage = "Could not read connected displays."
+            await record(level: .error, message: errorMessage ?? "Could not read connected displays.")
             return
         }
 
@@ -123,8 +161,64 @@ final class ScreenShifterModel: ObservableObject {
             if !isAutomatic {
                 captureMessage = "Applied \(appliedCount) profile\(appliedCount == 1 ? "" : "s"); \(unchangedCount) already matched; \(unavailableCount) unavailable."
             }
+            await record(
+                level: .info,
+                message: isAutomatic ? "Automatic apply completed." : (captureMessage ?? "Apply completed.")
+            )
         } else {
             errorMessage = "Could not apply profiles for: \(errors.joined(separator: ", "))."
+            await record(level: .error, message: errorMessage ?? "Could not apply saved profiles.")
+        }
+    }
+
+    func clearLogs() async {
+        do {
+            try await logStore.clear()
+            logText = ""
+        } catch {
+            errorMessage = "Could not clear the local log."
+        }
+    }
+
+    func copyLogs() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(logText, forType: .string)
+    }
+
+    func openLogFile() {
+        NSWorkspace.shared.open(LocalLogStore.defaultFileURL)
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+
+            launchAtLoginEnabled = enabled
+        } catch {
+            errorMessage = enabled
+                ? "Could not enable Launch at Login."
+                : "Could not disable Launch at Login."
+        }
+    }
+
+    private func refreshLogs() async {
+        do {
+            logText = try await logStore.text()
+        } catch {
+            errorMessage = "Could not read the local log."
+        }
+    }
+
+    private func record(level: LogLevel, message: String) async {
+        do {
+            try await logStore.append(level: level, message: message)
+            await refreshLogs()
+        } catch {
+            errorMessage = "Could not write the local log."
         }
     }
 

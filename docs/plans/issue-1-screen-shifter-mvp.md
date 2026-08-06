@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress: core profile capture, manual apply, and guarded automatic restoration are implemented and locally tested.
+In progress: core profile capture, manual apply, guarded automatic restoration, local logs, reset behavior, login-item registration, and DMG packaging are implemented and locally tested.
 
 ## Goal
 
@@ -45,5 +45,5 @@ Implement the native macOS menu bar application defined by Issue #1 and `docs/pr
 ## Checkpoint
 
 - Last completed: repository and Issue intake; Xcode 26.6, macOS SDK 26.5, and Swift 6.3 verification; public CoreGraphics display inventory and exact mode selection; UserDefaults profile persistence; menu-bar Capture Current Setup with overwrite confirmation; Settings profile inspection; manual Apply Saved Setup; and display-change automation with two-second debounce, three-second cooldown, wake protection, and persistent pause.
-- Current blocker: setting a non-current mode has not yet been manually verified against a real external display. Reset to Default needs a verified public-API path to restore macOS's default scaling mode. Launch at Login, the local log viewer, and DMG packaging are not yet implemented. No external source has been incorporated, so `displayplacer` licensing review remains deferred.
-- Next action: connect a known external display, capture a non-current scaling profile, manually apply it, and record the result. Then implement local logs, reset behavior, Login Item, and packaging.
+- Current blocker: setting a non-current mode and reset-to-default have not yet been manually verified against a real external display. The current host has only its built-in display connected. The public CoreGraphics reset path is implemented with a nullable mode, as documented in the installed SDK. No external source has been incorporated, so `displayplacer` licensing review remains deferred.
+- Next action: connect a known external display, capture a non-current scaling profile, manually apply it, verify reset and disconnect-all fallback, and record the result. Then run the two independent review waves and final secret scan before PR or wrap-up.

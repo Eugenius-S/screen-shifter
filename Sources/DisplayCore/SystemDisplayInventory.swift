@@ -65,14 +65,15 @@ public enum ProfileModeSelector {
             return matchingModes.first
         }
 
-        guard let maximumPixelWidth = availableModes.map(\.pixelWidth).max(),
-              let maximumPixelHeight = availableModes.map(\.pixelHeight).max()
-        else {
-            return nil
-        }
+        return matchingModes.max { leftMode, rightMode in
+            let leftArea = UInt64(leftMode.pixelWidth) * UInt64(leftMode.pixelHeight)
+            let rightArea = UInt64(rightMode.pixelWidth) * UInt64(rightMode.pixelHeight)
 
-        return matchingModes.first { mode in
-            mode.pixelWidth == maximumPixelWidth && mode.pixelHeight == maximumPixelHeight
+            if leftArea == rightArea {
+                return leftMode.pixelWidth < rightMode.pixelWidth
+            }
+
+            return leftArea < rightArea
         }
     }
 }
@@ -105,11 +106,13 @@ public enum DisplayApplicationPlanner {
         for profile: DisplayProfile,
         display: ConnectedDisplay
     ) -> DisplayApplicationDecision {
-        if let currentMode = display.currentMode,
-           currentMode.logicalWidth == profile.logicalWidth,
-           currentMode.logicalHeight == profile.logicalHeight,
-           currentMode.isHiDPI == profile.isHiDPI
-        {
+        let currentModeMatchesProfile = display.currentMode.map {
+            $0.logicalWidth == profile.logicalWidth
+                && $0.logicalHeight == profile.logicalHeight
+                && $0.isHiDPI == profile.isHiDPI
+        } ?? false
+
+        if display.isBuiltIn, currentModeMatchesProfile {
             return .alreadyApplied
         }
 
@@ -119,6 +122,10 @@ public enum DisplayApplicationPlanner {
             requiresMaximumPhysicalResolution: !display.isBuiltIn
         ) else {
             return .unavailable
+        }
+
+        if display.currentMode == desiredMode {
+            return .alreadyApplied
         }
 
         return .apply(desiredMode)
@@ -169,6 +176,13 @@ public enum DisplayModeApplicationError: Error, Equatable, Sendable {
 @MainActor
 public struct SystemDisplayModeApplier {
     public init() {}
+
+    public func reset(_ display: ConnectedDisplay) throws {
+        let result = CGDisplaySetDisplayMode(display.displayID, nil, nil)
+        guard result == .success else {
+            throw DisplayModeApplicationError.modeChangeFailed(result.rawValue)
+        }
+    }
 
     public func apply(
         _ profile: DisplayProfile,

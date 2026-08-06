@@ -49,6 +49,44 @@ final class SystemDisplayInventoryTests: XCTestCase {
         XCTAssertEqual(selectedMode, maximumResolutionMode)
     }
 
+    func testModeSelectorChoosesLargestAvailablePhysicalMode() {
+        let profile = DisplayProfile(
+            displayIdentity: .external(
+                vendorID: 1552,
+                productID: 504,
+                serialNumber: 42,
+                name: "Ultrawide Display",
+                physicalWidthMillimeters: 800,
+                physicalHeightMillimeters: 340
+            ),
+            logicalWidth: 2560,
+            logicalHeight: 1440,
+            isHiDPI: true
+        )
+        let widerMode = DisplayModeDescriptor(
+            pixelWidth: 5120,
+            pixelHeight: 2160,
+            logicalWidth: 2560,
+            logicalHeight: 1440,
+            isHiDPI: true
+        )
+        let tallerMode = DisplayModeDescriptor(
+            pixelWidth: 3840,
+            pixelHeight: 2880,
+            logicalWidth: 2560,
+            logicalHeight: 1440,
+            isHiDPI: true
+        )
+
+        let selectedMode = ProfileModeSelector.matchingMode(
+            for: profile,
+            availableModes: [tallerMode, widerMode],
+            requiresMaximumPhysicalResolution: true
+        )
+
+        XCTAssertEqual(selectedMode, widerMode)
+    }
+
     func testCapturePlannerCreatesProfilesForDisplaysWithCurrentModes() {
         let builtInMode = DisplayModeDescriptor(
             pixelWidth: 3024,
@@ -153,6 +191,49 @@ final class SystemDisplayInventoryTests: XCTestCase {
         let decision = DisplayApplicationPlanner.decision(for: profile, display: display)
 
         XCTAssertEqual(decision, .apply(savedMode))
+    }
+
+    func testApplicationPlannerUpgradesExternalDisplayToMaximumPhysicalMode() {
+        let lowerResolutionMode = DisplayModeDescriptor(
+            pixelWidth: 2560,
+            pixelHeight: 1440,
+            logicalWidth: 2560,
+            logicalHeight: 1440,
+            isHiDPI: true
+        )
+        let maximumResolutionMode = DisplayModeDescriptor(
+            pixelWidth: 5120,
+            pixelHeight: 2880,
+            logicalWidth: 2560,
+            logicalHeight: 1440,
+            isHiDPI: true
+        )
+        let identity = DisplayIdentity.external(
+            vendorID: 1552,
+            productID: 504,
+            serialNumber: 42,
+            name: "Studio Display",
+            physicalWidthMillimeters: 600,
+            physicalHeightMillimeters: 340
+        )
+        let display = ConnectedDisplay(
+            displayID: 2,
+            identity: identity,
+            name: "Studio Display",
+            isBuiltIn: false,
+            currentMode: lowerResolutionMode,
+            availableModes: [lowerResolutionMode, maximumResolutionMode]
+        )
+        let profile = DisplayProfile(
+            displayIdentity: identity,
+            logicalWidth: 2560,
+            logicalHeight: 1440,
+            isHiDPI: true
+        )
+
+        let decision = DisplayApplicationPlanner.decision(for: profile, display: display)
+
+        XCTAssertEqual(decision, .apply(maximumResolutionMode))
     }
 
     func testModeApplierSkipsDisplayAlreadyAtSavedMode() throws {

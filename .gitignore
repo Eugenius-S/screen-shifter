@@ -6,6 +6,8 @@
 .claude/
 .vscode/
 .build/
+.swiftpm/
+.DS_Store
 tmp/
 *.tmp
 *.temp
