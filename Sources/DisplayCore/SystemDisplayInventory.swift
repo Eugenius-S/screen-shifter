@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import Foundation
 import ScreenShifterDomain
 
 public struct DisplayModeDescriptor: Codable, Equatable, Sendable {
@@ -128,6 +129,36 @@ public enum DisplayApplicationOutcome: Equatable, Sendable {
     case applied
     case alreadyApplied
     case unavailable
+}
+
+public enum AutomationPermission: Equatable, Sendable {
+    case allowed
+    case paused
+    case wakeProtection
+    case cooldown
+}
+
+public enum AutomationPolicy {
+    public static func permission(
+        isPaused: Bool,
+        now: Date,
+        cooldownUntil: Date?,
+        wakeProtectionUntil: Date?
+    ) -> AutomationPermission {
+        if isPaused {
+            return .paused
+        }
+
+        if let wakeProtectionUntil, now < wakeProtectionUntil {
+            return .wakeProtection
+        }
+
+        if let cooldownUntil, now < cooldownUntil {
+            return .cooldown
+        }
+
+        return .allowed
+    }
 }
 
 public enum DisplayModeApplicationError: Error, Equatable, Sendable {
