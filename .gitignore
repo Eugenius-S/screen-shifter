@@ -4,6 +4,7 @@
 .cache/
 .agent-cache/
 .claude/
+.build/
 tmp/
 *.tmp
 *.temp
