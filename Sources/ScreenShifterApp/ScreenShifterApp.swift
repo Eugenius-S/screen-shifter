@@ -225,8 +225,23 @@ private struct DisplayCaptureSection: View {
         model.savedProfiles.contains { $0.displayIdentity == display.identity }
     }
 
+    private var captureStatus: String {
+        switch model.captureState(for: display) {
+        case .idle:
+            return hasSavedProfile ? "Saved profile available." : "No saved profile."
+        case .capturing:
+            return "Capture in progress. Adjust settings, then complete capture."
+        case let .completed(profile):
+            return "Captured \(profile.logicalWidth) × \(profile.logicalHeight)\(profile.isHiDPI ? " HiDPI" : "")."
+        }
+    }
+
     var body: some View {
         Section(display.name) {
+            Label(captureStatus, systemImage: hasSavedProfile ? "checkmark.circle" : "circle.dashed")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
             Button("Start capture settings") {
                 model.startCapture(for: display)
             }
