@@ -194,6 +194,12 @@ private struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+
+            Section {
+                Button("Check for updates") {
+                    model.checkForUpdates()
+                }
+            }
         }
         .formStyle(.grouped)
         .frame(width: 420)

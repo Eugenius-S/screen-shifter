@@ -310,6 +310,17 @@ final class ScreenShifterModel: ObservableObject {
         openSystemSettings("x-apple.systempreferences:com.apple.dock")
     }
 
+    func checkForUpdates() {
+        guard let url = URL(string: "https://github.com/Eugenius-S/screen-shifter/releases/latest"),
+              NSWorkspace.shared.open(url)
+        else {
+            errorMessage = "Could not open the update page."
+            return
+        }
+
+        captureMessage = "Opened the latest release page."
+    }
+
     func setLaunchAtLogin(_ enabled: Bool) {
         do {
             if enabled {
