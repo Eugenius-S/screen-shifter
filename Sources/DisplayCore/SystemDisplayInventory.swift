@@ -95,6 +95,38 @@ public enum ProfileCapturePlanner {
     }
 }
 
+public enum DisplayCaptureState: Equatable, Sendable {
+    case idle
+    case capturing
+    case completed(DisplayProfile)
+
+    public var canComplete: Bool {
+        if case .capturing = self {
+            return true
+        }
+
+        return false
+    }
+}
+
+public enum DisplayCaptureStateMachine {
+    public static func start(from state: DisplayCaptureState) -> DisplayCaptureState {
+        _ = state
+        return .capturing
+    }
+
+    public static func complete(
+        from state: DisplayCaptureState,
+        profile: DisplayProfile?
+    ) -> DisplayCaptureState {
+        guard state.canComplete, let profile else {
+            return state
+        }
+
+        return .completed(profile)
+    }
+}
+
 public enum DisplayApplicationDecision: Equatable, Sendable {
     case alreadyApplied
     case apply(DisplayModeDescriptor)
