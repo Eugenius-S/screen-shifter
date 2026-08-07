@@ -12,7 +12,7 @@ struct ScreenShifterApp: App {
 
     var body: some Scene {
         MenuBarExtra("Screen Shifter", systemImage: "display.2") {
-            MenuBarContent(model: model, automationPaused: $model.automationPaused)
+            MenuBarContent(model: model)
         }
 
         Settings {
@@ -50,24 +50,8 @@ private final class SettingsWindowController {
 
 private struct MenuBarContent: View {
     @ObservedObject var model: ScreenShifterModel
-    @Binding var automationPaused: Bool
 
     var body: some View {
-        Button("Apply Saved Setup") {
-            Task {
-                await model.applySavedSetup()
-            }
-        }
-        Button("Capture Current Setup") {
-            model.prepareCapture()
-        }
-
-        Divider()
-
-        Toggle("Pause Automation", isOn: $automationPaused)
-
-        Divider()
-
         Button {
             SettingsWindowController.shared.show(model: model)
         } label: {
@@ -164,7 +148,7 @@ private struct SettingsView: View {
                 }
             }
 
-            Section("Local Log") {
+            DisclosureGroup("Log") {
                 TextEditor(text: .constant(model.logText))
                     .font(.system(.caption, design: .monospaced))
                     .frame(minHeight: 140)
