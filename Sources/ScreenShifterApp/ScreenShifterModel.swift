@@ -62,6 +62,7 @@ private final class SystemSleepAssertionController {
 final class ScreenShifterModel: ObservableObject {
     @Published private(set) var displays: [ConnectedDisplay] = []
     @Published private(set) var savedProfiles: [DisplayProfile] = []
+    @Published private(set) var captureStates: [DisplayIdentity: DisplayCaptureState] = [:]
     @Published private(set) var captureCandidates: [DisplayProfile] = []
     @Published private(set) var errorMessage: String?
     @Published private(set) var captureMessage: String?
@@ -129,6 +130,46 @@ final class ScreenShifterModel: ObservableObject {
         isCaptureConfirmationPresented = true
     }
 
+    func captureState(for display: ConnectedDisplay) -> DisplayCaptureState {
+        captureStates[display.identity] ?? .idle
+    }
+
+    func startCapture(for display: ConnectedDisplay) {
+        captureStates[display.identity] = DisplayCaptureStateMachine.start(
+            from: captureState(for: display)
+        )
+        captureMessage = "Capture started for \(display.name)."
+    }
+
+    func completeCapture(for display: ConnectedDisplay) async {
+        guard captureState(for: display).canComplete else {
+            return
+        }
+
+        do {
+            let currentDisplays = try inventory.connectedDisplays()
+            guard let currentDisplay = currentDisplays.first(where: { $0.identity == display.identity }),
+                  let profile = ProfileCapturePlanner.profiles(for: [currentDisplay]).first
+            else {
+                captureStates[display.identity] = .idle
+                errorMessage = "Could not capture \(display.name); the display is no longer available."
+                return
+            }
+
+            await profileStore.save(profile)
+            savedProfiles = await profileStore.profiles()
+            captureStates[display.identity] = DisplayCaptureStateMachine.complete(
+                from: .capturing,
+                profile: profile
+            )
+            captureMessage = "Captured settings for \(display.name)."
+            await record(level: .info, message: captureMessage ?? "Captured display settings.")
+        } catch {
+            errorMessage = "Could not capture settings for \(display.name)."
+            await record(level: .error, message: errorMessage ?? "Could not capture display settings.")
+        }
+    }
+
     func confirmCapture() async {
         let profiles = captureCandidates
 
@@ -160,6 +201,7 @@ final class ScreenShifterModel: ObservableObject {
             try SystemDisplayModeApplier().reset(display)
             await profileStore.remove(for: display.identity)
             savedProfiles = await profileStore.profiles()
+            captureStates[display.identity] = .idle
             resetCandidate = nil
             isResetConfirmationPresented = false
             captureMessage = "Reset \(display.name) to the system default."
