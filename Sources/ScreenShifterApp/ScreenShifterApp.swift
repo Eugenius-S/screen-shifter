@@ -1,12 +1,31 @@
 import AppKit
 import DisplayCore
+import Sparkle
 import SwiftUI
 
 @main
 struct ScreenShifterApp: App {
-    @StateObject private var model = ScreenShifterModel()
+    private let updaterController: SPUStandardUpdaterController
+    @StateObject private var model: ScreenShifterModel
 
     init() {
+        let hasUpdaterConfiguration = (Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String)
+            .map { !$0.isEmpty } == true
+        let updaterController = SPUStandardUpdaterController(
+            startingUpdater: hasUpdaterConfiguration,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
+        self.updaterController = updaterController
+        if hasUpdaterConfiguration {
+            _model = StateObject(
+                wrappedValue: ScreenShifterModel(
+                    updateChecker: SparkleUpdateChecker(updater: updaterController.updater)
+                )
+            )
+        } else {
+            _model = StateObject(wrappedValue: ScreenShifterModel())
+        }
         NSApplication.shared.setActivationPolicy(.accessory)
     }
 

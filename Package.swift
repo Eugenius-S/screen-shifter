@@ -10,6 +10,9 @@ let package = Package(
         .library(name: "DisplayCore", targets: ["DisplayCore"]),
         .executable(name: "ScreenShifter", targets: ["ScreenShifterApp"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.5")
+    ],
     targets: [
         .target(name: "ScreenShifterDomain"),
         .target(
@@ -18,7 +21,11 @@ let package = Package(
         ),
         .executableTarget(
             name: "ScreenShifterApp",
-            dependencies: ["DisplayCore", "ScreenShifterDomain"]
+            dependencies: [
+                "DisplayCore",
+                "ScreenShifterDomain",
+                .product(name: "Sparkle", package: "sparkle")
+            ]
         ),
         .testTarget(
             name: "ScreenShifterDomainTests",

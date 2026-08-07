@@ -5,20 +5,39 @@ import DisplayCore
 import IOKit.pwr_mgt
 import ScreenShifterDomain
 import ServiceManagement
+import Sparkle
 
 @MainActor
-protocol UpdatePageOpening {
-    func openLatestReleasePage() -> Bool
+protocol UpdateChecking {
+    func checkForUpdates() -> Bool
 }
 
 @MainActor
-private final class GitHubReleasePageOpener: UpdatePageOpening {
-    func openLatestReleasePage() -> Bool {
+private final class GitHubReleaseUpdateChecker: UpdateChecking {
+    func checkForUpdates() -> Bool {
         guard let url = URL(string: "https://github.com/Eugenius-S/screen-shifter/releases/latest") else {
             return false
         }
 
         return NSWorkspace.shared.open(url)
+    }
+}
+
+@MainActor
+final class SparkleUpdateChecker: UpdateChecking {
+    private let updater: SPUUpdater
+
+    init(updater: SPUUpdater) {
+        self.updater = updater
+    }
+
+    func checkForUpdates() -> Bool {
+        guard updater.canCheckForUpdates else {
+            return false
+        }
+
+        updater.checkForUpdates()
+        return true
     }
 }
 
@@ -108,13 +127,13 @@ final class ScreenShifterModel: ObservableObject {
     private var wakeProtectionUntil: Date?
     private var lastObservedTopology: DisplayTopology?
     private let sleepAssertion = SystemSleepAssertionController()
-    private let updatePageOpener: UpdatePageOpening
+    private let updateChecker: UpdateChecking
 
-    init(updatePageOpener: UpdatePageOpening = GitHubReleasePageOpener()) {
+    init(updateChecker: UpdateChecking = GitHubReleaseUpdateChecker()) {
         automationPaused = UserDefaults.standard.bool(forKey: "automationPaused")
         keepExternalDisplayAwake = UserDefaults.standard.bool(forKey: "keepExternalDisplayAwake")
         launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
-        self.updatePageOpener = updatePageOpener
+        self.updateChecker = updateChecker
         registerAutomationObservers()
     }
 
@@ -333,12 +352,12 @@ final class ScreenShifterModel: ObservableObject {
     }
 
     func checkForUpdates() {
-        guard updatePageOpener.openLatestReleasePage() else {
-            errorMessage = "Could not open the update page."
+        guard updateChecker.checkForUpdates() else {
+            errorMessage = "Could not start the update check."
             return
         }
 
-        captureMessage = "Opened the latest release page."
+        captureMessage = "Started update check."
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
