@@ -1,4 +1,5 @@
 import AppKit
+import DisplayCore
 import SwiftUI
 
 @main
@@ -103,44 +104,57 @@ private struct MenuBarContent: View {
 
 private struct SettingsView: View {
     @ObservedObject var model: ScreenShifterModel
+    @State private var selectedExternalDisplayID: UInt32?
 
     var body: some View {
+        let builtInDisplay = model.displays.first { $0.isBuiltIn }
+        let externalDisplays = model.displays.filter { !$0.isBuiltIn }
+        let selectedExternalDisplay = externalDisplays.first {
+            $0.displayID == selectedExternalDisplayID
+        } ?? externalDisplays.first
+
         Form {
-            Section("Connected Displays") {
-                if model.displays.isEmpty {
-                    Text("No displays detected.")
-                } else {
-                    ForEach(model.displays, id: \.displayID) { display in
-                        HStack {
-                            Text(display.name)
-                            Spacer()
-                            Button("Reset to Default") {
-                                model.prepareReset(for: display)
-                            }
-                            .disabled(!model.savedProfiles.contains { $0.displayIdentity == display.identity })
-                        }
+            Section("Displays") {
+                Picker("Built-in display", selection: .constant(builtInDisplay?.displayID)) {
+                    if let builtInDisplay {
+                        Text(builtInDisplay.name)
+                            .tag(Optional(builtInDisplay.displayID))
+                    } else {
+                        Text("Not detected")
+                            .tag(Optional<UInt32>.none)
                     }
                 }
+                .disabled(builtInDisplay == nil)
 
-                Button("Refresh Displays") {
-                    Task {
-                        await model.refresh()
+                Picker("External display", selection: $selectedExternalDisplayID) {
+                    Text("Not detected")
+                        .tag(Optional<UInt32>.none)
+                    ForEach(externalDisplays, id: \.displayID) { display in
+                        Text(display.name)
+                            .tag(Optional(display.displayID))
                     }
+                }
+                .disabled(externalDisplays.isEmpty)
+                .onAppear {
+                    if selectedExternalDisplayID == nil {
+                        selectedExternalDisplayID = externalDisplays.first?.displayID
+                    }
+                }
+                .onChange(of: externalDisplays.map(\.displayID)) { _, displayIDs in
+                    if let selectedExternalDisplayID, displayIDs.contains(selectedExternalDisplayID) {
+                        return
+                    }
+
+                    self.selectedExternalDisplayID = displayIDs.first
                 }
             }
 
-            Section("Saved Profiles") {
-                if model.savedProfiles.isEmpty {
-                    Text("No saved display profiles.")
-                } else {
-                    ForEach(model.savedProfiles, id: \.displayIdentity) { profile in
-                        Text("\(profile.logicalWidth) x \(profile.logicalHeight)\(profile.isHiDPI ? " HiDPI" : "")")
-                    }
-                }
+            if let builtInDisplay {
+                DisplayCaptureSection(display: builtInDisplay, model: model)
+            }
 
-                if let captureMessage = model.captureMessage {
-                    Text(captureMessage)
-                }
+            if let selectedExternalDisplay {
+                DisplayCaptureSection(display: selectedExternalDisplay, model: model)
             }
 
             if let errorMessage = model.errorMessage {
@@ -180,6 +194,13 @@ private struct SettingsView: View {
                 )
             }
 
+            if let captureMessage = model.captureMessage {
+                Section {
+                    Text(captureMessage)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("Power") {
                 Toggle(
                     "Keep Mac Awake with External Display",
@@ -193,5 +214,57 @@ private struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 420)
         .padding()
+        .alert("Reset Display to Default", isPresented: $model.isResetConfirmationPresented) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset", role: .destructive) {
+                Task {
+                    await model.confirmReset()
+                }
+            }
+        } message: {
+            Text("This removes the saved profile for \(model.resetCandidate?.name ?? "this display") and restores the system default scaling.")
+        }
+    }
+}
+
+private struct DisplayCaptureSection: View {
+    let display: ConnectedDisplay
+    @ObservedObject var model: ScreenShifterModel
+
+    private var hasSavedProfile: Bool {
+        model.savedProfiles.contains { $0.displayIdentity == display.identity }
+    }
+
+    var body: some View {
+        Section(display.name) {
+            Button("Start capture settings") {
+                model.startCapture(for: display)
+            }
+
+            Button("Display scaling") {
+                model.openDisplaySettings()
+            }
+            Button("HiDPI mode") {
+                model.openDisplaySettings()
+            }
+            Button("Font size") {
+                model.openAppearanceSettings()
+            }
+            Button("Dock size") {
+                model.openDockSettings()
+            }
+
+            Button("Complete capture") {
+                Task {
+                    await model.completeCapture(for: display)
+                }
+            }
+            .disabled(!model.captureState(for: display).canComplete)
+
+            Button("Reset default", role: .destructive) {
+                model.prepareReset(for: display)
+            }
+            .disabled(!hasSavedProfile)
+        }
     }
 }

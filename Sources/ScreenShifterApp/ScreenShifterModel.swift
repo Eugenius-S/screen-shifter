@@ -298,6 +298,18 @@ final class ScreenShifterModel: ObservableObject {
         NSWorkspace.shared.open(LocalLogStore.defaultFileURL)
     }
 
+    func openDisplaySettings() {
+        openSystemSettings("x-apple.systempreferences:com.apple.Displays-Settings.extension")
+    }
+
+    func openAppearanceSettings() {
+        openSystemSettings("x-apple.systempreferences:com.apple.Appearance-Settings.extension")
+    }
+
+    func openDockSettings() {
+        openSystemSettings("x-apple.systempreferences:com.apple.dock")
+    }
+
     func setLaunchAtLogin(_ enabled: Bool) {
         do {
             if enabled {
@@ -328,6 +340,18 @@ final class ScreenShifterModel: ObservableObject {
             await refreshLogs()
         } catch {
             errorMessage = "Could not write the local log."
+        }
+    }
+
+    private func openSystemSettings(_ address: String) {
+        guard let url = URL(string: address) else {
+            errorMessage = "Could not open System Settings."
+            return
+        }
+
+        guard NSWorkspace.shared.open(url) else {
+            errorMessage = "Could not open System Settings."
+            return
         }
     }
 
