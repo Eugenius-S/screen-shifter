@@ -179,6 +179,16 @@ private struct SettingsView: View {
                     )
                 )
             }
+
+            Section("Power") {
+                Toggle(
+                    "Keep Mac Awake with External Display",
+                    isOn: $model.keepExternalDisplayAwake
+                )
+                Text("Prevents automatic system sleep only while an external display is connected.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .frame(width: 420)

@@ -1,8 +1,62 @@
 @preconcurrency import AppKit
 import Combine
+import CoreFoundation
 import DisplayCore
+import IOKit.pwr_mgt
 import ScreenShifterDomain
 import ServiceManagement
+
+private final class SystemSleepAssertionController {
+    private var assertionID: IOPMAssertionID = 0
+
+    @discardableResult
+    func update(isEnabled: Bool) -> Bool {
+        if !isEnabled {
+            releaseAssertion()
+            return true
+        }
+
+        guard assertionID == 0 else {
+            return true
+        }
+
+        var newAssertionID: IOPMAssertionID = 0
+        let result = IOPMAssertionCreateWithName(
+            makeCFString(kIOPMAssertionTypeNoIdleSleep),
+            IOPMAssertionLevel(kIOPMAssertionLevelOn),
+            makeCFString("Screen Shifter: external display"),
+            &newAssertionID
+        )
+        guard result == kIOReturnSuccess else {
+            return false
+        }
+
+        assertionID = newAssertionID
+        return true
+    }
+
+    deinit {
+        releaseAssertion()
+    }
+
+    private func releaseAssertion() {
+        guard assertionID != 0 else {
+            return
+        }
+
+        IOPMAssertionRelease(assertionID)
+        assertionID = 0
+    }
+
+    private func makeCFString(_ value: String) -> CFString {
+        let string = value as NSString
+        return CFStringCreateWithCString(
+            nil,
+            string.utf8String!,
+            CFStringBuiltInEncodings.UTF8.rawValue
+        )!
+    }
+}
 
 @MainActor
 final class ScreenShifterModel: ObservableObject {
@@ -16,6 +70,12 @@ final class ScreenShifterModel: ObservableObject {
     @Published var isResetConfirmationPresented = false
     @Published private(set) var resetCandidate: ConnectedDisplay?
     @Published private(set) var launchAtLoginEnabled: Bool
+    @Published var keepExternalDisplayAwake: Bool {
+        didSet {
+            UserDefaults.standard.set(keepExternalDisplayAwake, forKey: "keepExternalDisplayAwake")
+            updateSleepAssertion()
+        }
+    }
     @Published var automationPaused: Bool {
         didSet {
             UserDefaults.standard.set(automationPaused, forKey: "automationPaused")
@@ -29,9 +89,12 @@ final class ScreenShifterModel: ObservableObject {
     private var scheduledAutomation: Task<Void, Never>?
     private var cooldownUntil: Date?
     private var wakeProtectionUntil: Date?
+    private var lastObservedTopology: DisplayTopology?
+    private let sleepAssertion = SystemSleepAssertionController()
 
     init() {
         automationPaused = UserDefaults.standard.bool(forKey: "automationPaused")
+        keepExternalDisplayAwake = UserDefaults.standard.bool(forKey: "keepExternalDisplayAwake")
         launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
         registerAutomationObservers()
     }
@@ -43,6 +106,8 @@ final class ScreenShifterModel: ObservableObject {
     func refresh() async {
         do {
             displays = try inventory.connectedDisplays()
+            lastObservedTopology = DisplayTopology(displays: displays)
+            updateSleepAssertion()
             errorMessage = nil
         } catch {
             errorMessage = "Could not read connected displays."
@@ -121,6 +186,8 @@ final class ScreenShifterModel: ObservableObject {
 
         do {
             displays = try inventory.connectedDisplays()
+            lastObservedTopology = DisplayTopology(displays: displays)
+            updateSleepAssertion()
         } catch {
             errorMessage = "Could not read connected displays."
             await record(level: .error, message: errorMessage ?? "Could not read connected displays.")
@@ -231,7 +298,7 @@ final class ScreenShifterModel: ObservableObject {
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.scheduleAutomationAfterDisplayChange()
+                    self?.handleDisplayChangeNotification()
                 }
             },
             notificationCenter.addObserver(
@@ -249,18 +316,64 @@ final class ScreenShifterModel: ObservableObject {
     private func protectAutomationAfterWake() {
         wakeProtectionUntil = Date().addingTimeInterval(3)
         scheduledAutomation?.cancel()
-        scheduledAutomation = nil
+        scheduledAutomation = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            guard !Task.isCancelled else {
+                return
+            }
+            self?.scheduleAutomationAfterDisplayChange(force: true)
+        }
     }
 
-    private func scheduleAutomationAfterDisplayChange() {
-        let permission = AutomationPolicy.permission(
-            isPaused: automationPaused,
-            now: Date(),
-            cooldownUntil: cooldownUntil,
-            wakeProtectionUntil: wakeProtectionUntil
-        )
-        guard permission == .allowed else {
+    private func handleDisplayChangeNotification() {
+        guard let currentDisplays = try? inventory.connectedDisplays() else {
             return
+        }
+
+        displays = currentDisplays
+        updateSleepAssertion()
+        let currentTopology = DisplayTopology(displays: currentDisplays)
+        let shouldApply = AutomaticDisplayChangePolicy.shouldApply(
+            previous: lastObservedTopology,
+            current: currentTopology
+        )
+        lastObservedTopology = currentTopology
+
+        guard shouldApply else {
+            scheduledAutomation?.cancel()
+            scheduledAutomation = nil
+            return
+        }
+
+        scheduleAutomationAfterDisplayChange()
+    }
+
+    private func updateSleepAssertion() {
+        let shouldPreventSleep = ExternalDisplaySleepPolicy.shouldPreventSystemSleep(
+            isEnabled: keepExternalDisplayAwake,
+            displays: displays
+        )
+        guard sleepAssertion.update(isEnabled: shouldPreventSleep) else {
+            errorMessage = "Could not change the external-display sleep setting."
+            return
+        }
+
+        if errorMessage == "Could not change the external-display sleep setting." {
+            errorMessage = nil
+        }
+    }
+
+    private func scheduleAutomationAfterDisplayChange(force: Bool = false) {
+        if !force {
+            let permission = AutomationPolicy.permission(
+                isPaused: automationPaused,
+                now: Date(),
+                cooldownUntil: cooldownUntil,
+                wakeProtectionUntil: wakeProtectionUntil
+            )
+            guard permission == .allowed else {
+                return
+            }
         }
 
         scheduledAutomation?.cancel()

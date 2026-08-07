@@ -168,6 +168,39 @@ public enum AutomationPolicy {
     }
 }
 
+public struct DisplayTopology: Equatable, Sendable {
+    public let externalDisplayIdentities: [DisplayIdentity]
+
+    public init(displays: [ConnectedDisplay]) {
+        externalDisplayIdentities = displays
+            .filter { !$0.isBuiltIn }
+            .map(\.identity)
+            .sorted { $0.storageKey < $1.storageKey }
+    }
+}
+
+public enum AutomaticDisplayChangePolicy {
+    public static func shouldApply(
+        previous: DisplayTopology?,
+        current: DisplayTopology
+    ) -> Bool {
+        guard let previous else {
+            return true
+        }
+
+        return previous.externalDisplayIdentities != current.externalDisplayIdentities
+    }
+}
+
+public enum ExternalDisplaySleepPolicy {
+    public static func shouldPreventSystemSleep(
+        isEnabled: Bool,
+        displays: [ConnectedDisplay]
+    ) -> Bool {
+        isEnabled && displays.contains { !$0.isBuiltIn }
+    }
+}
+
 public enum DisplayModeApplicationError: Error, Equatable, Sendable {
     case modeUnavailable
     case modeChangeFailed(Int32)
