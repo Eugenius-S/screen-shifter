@@ -397,4 +397,11 @@ final class SystemDisplayInventoryTests: XCTestCase {
 
         XCTAssertEqual(completed, .idle)
     }
+
+    func testCaptureStateCancelsWhenDisplayBecomesUnavailable() {
+        let cancelled = DisplayCaptureStateMachine.cancel(from: .capturing)
+
+        XCTAssertEqual(cancelled, .idle)
+        XCTAssertFalse(cancelled.canComplete)
+    }
 }

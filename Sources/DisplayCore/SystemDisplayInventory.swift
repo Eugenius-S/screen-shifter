@@ -115,6 +115,11 @@ public enum DisplayCaptureStateMachine {
         return .capturing
     }
 
+    public static func cancel(from state: DisplayCaptureState) -> DisplayCaptureState {
+        _ = state
+        return .idle
+    }
+
     public static func complete(
         from state: DisplayCaptureState,
         profile: DisplayProfile?

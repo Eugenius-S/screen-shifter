@@ -151,7 +151,9 @@ final class ScreenShifterModel: ObservableObject {
             guard let currentDisplay = currentDisplays.first(where: { $0.identity == display.identity }),
                   let profile = ProfileCapturePlanner.profiles(for: [currentDisplay]).first
             else {
-                captureStates[display.identity] = .idle
+                captureStates[display.identity] = DisplayCaptureStateMachine.cancel(
+                    from: captureState(for: display)
+                )
                 errorMessage = "Could not capture \(display.name); the display is no longer available."
                 return
             }
@@ -201,7 +203,9 @@ final class ScreenShifterModel: ObservableObject {
             try SystemDisplayModeApplier().reset(display)
             await profileStore.remove(for: display.identity)
             savedProfiles = await profileStore.profiles()
-            captureStates[display.identity] = .idle
+            captureStates[display.identity] = DisplayCaptureStateMachine.cancel(
+                from: captureState(for: display)
+            )
             resetCandidate = nil
             isResetConfirmationPresented = false
             captureMessage = "Reset \(display.name) to the system default."
