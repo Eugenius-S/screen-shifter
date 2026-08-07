@@ -59,17 +59,26 @@ fi
 printf '%s\n' '</dict></plist>' >> "$app_path/Contents/Info.plist"
 
 if test -n "${CODESIGN_IDENTITY:-}"; then
-    codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" \
+    sign_options=""
+    sign_timestamp=""
+    if test "$CODESIGN_IDENTITY" != "-"; then
+        sign_options="--options runtime"
+        sign_timestamp="--timestamp"
+    fi
+
+    codesign --force $sign_options $sign_timestamp --sign "$CODESIGN_IDENTITY" \
         "$app_path/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
-    codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" \
+    codesign --force $sign_options $sign_timestamp --sign "$CODESIGN_IDENTITY" \
         "$app_path/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc"
-    codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" \
+    codesign --force $sign_options $sign_timestamp --sign "$CODESIGN_IDENTITY" \
         "$app_path/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc"
-    codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" \
+    codesign --force $sign_options $sign_timestamp --sign "$CODESIGN_IDENTITY" \
         "$app_path/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app"
-    codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" \
+    codesign --force $sign_options $sign_timestamp --sign "$CODESIGN_IDENTITY" \
+        "$app_path/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle"
+    codesign --force $sign_options $sign_timestamp --sign "$CODESIGN_IDENTITY" \
         "$app_path/Contents/Frameworks/Sparkle.framework"
-    codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$app_path"
+    codesign --force $sign_options $sign_timestamp --sign "$CODESIGN_IDENTITY" "$app_path"
 fi
 
 hdiutil create \
