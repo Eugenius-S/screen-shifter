@@ -6,6 +6,22 @@ import IOKit.pwr_mgt
 import ScreenShifterDomain
 import ServiceManagement
 
+@MainActor
+protocol UpdatePageOpening {
+    func openLatestReleasePage() -> Bool
+}
+
+@MainActor
+private final class GitHubReleasePageOpener: UpdatePageOpening {
+    func openLatestReleasePage() -> Bool {
+        guard let url = URL(string: "https://github.com/Eugenius-S/screen-shifter/releases/latest") else {
+            return false
+        }
+
+        return NSWorkspace.shared.open(url)
+    }
+}
+
 private final class SystemSleepAssertionController {
     private var assertionID: IOPMAssertionID = 0
 
@@ -92,11 +108,13 @@ final class ScreenShifterModel: ObservableObject {
     private var wakeProtectionUntil: Date?
     private var lastObservedTopology: DisplayTopology?
     private let sleepAssertion = SystemSleepAssertionController()
+    private let updatePageOpener: UpdatePageOpening
 
-    init() {
+    init(updatePageOpener: UpdatePageOpening = GitHubReleasePageOpener()) {
         automationPaused = UserDefaults.standard.bool(forKey: "automationPaused")
         keepExternalDisplayAwake = UserDefaults.standard.bool(forKey: "keepExternalDisplayAwake")
         launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
+        self.updatePageOpener = updatePageOpener
         registerAutomationObservers()
     }
 
@@ -315,9 +333,7 @@ final class ScreenShifterModel: ObservableObject {
     }
 
     func checkForUpdates() {
-        guard let url = URL(string: "https://github.com/Eugenius-S/screen-shifter/releases/latest"),
-              NSWorkspace.shared.open(url)
-        else {
+        guard updatePageOpener.openLatestReleasePage() else {
             errorMessage = "Could not open the update page."
             return
         }

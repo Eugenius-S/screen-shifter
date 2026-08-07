@@ -27,6 +27,10 @@ let package = Package(
         .testTarget(
             name: "DisplayCoreTests",
             dependencies: ["DisplayCore", "ScreenShifterDomain"]
+        ),
+        .testTarget(
+            name: "ScreenShifterAppTests",
+            dependencies: ["ScreenShifterApp"]
         )
     ]
 )
