@@ -7,27 +7,24 @@ import SwiftUI
 @main
 struct ScreenShifterApp: App {
     private let updaterController: SPUStandardUpdaterController
+    private let updaterDelegate: SparkleUpdaterDelegate
     @StateObject private var model: ScreenShifterModel
 
     init() {
-        let hasUpdaterConfiguration = (Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String)
-            .map { !$0.isEmpty } == true
+        let updaterDelegate = SparkleUpdaterDelegate()
         let updaterController = SPUStandardUpdaterController(
-            startingUpdater: hasUpdaterConfiguration,
-            updaterDelegate: nil,
+            startingUpdater: true,
+            updaterDelegate: updaterDelegate,
             userDriverDelegate: nil
         )
         self.updaterController = updaterController
-        if hasUpdaterConfiguration {
-            _model = StateObject(
-                wrappedValue: ScreenShifterModel(
-                    updateChecker: SparkleUpdateChecker(updater: updaterController.updater)
-                )
+        self.updaterDelegate = updaterDelegate
+        _model = StateObject(
+            wrappedValue: ScreenShifterModel(
+                updateChecker: SparkleUpdateChecker(updater: updaterController.updater)
             )
-        } else {
-            _model = StateObject(wrappedValue: ScreenShifterModel())
-        }
-        NSApplication.shared.setActivationPolicy(.accessory)
+        )
+        NSApplication.shared.setActivationPolicy(.regular)
     }
 
     var body: some Scene {
@@ -60,6 +57,8 @@ private final class SettingsWindowController {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.setContentSize(NSSize(width: 420, height: 600))
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = false
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.center()
         self.window = window
 
@@ -364,15 +363,16 @@ private struct DisplayCaptureSection: View {
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)
 
+            Text("Screen Shifter records display resolution and HiDPI state.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
             Group {
-                Button("Display scaling") {
+                Button("Display resolution and HiDPI") {
                     model.openDisplaySettings()
                 }
-                Button("HiDPI mode") {
-                    model.openDisplaySettings()
-                }
-                Button("Font size") {
-                    model.openAppearanceSettings()
+                Button("Text size and pointer size") {
+                    model.openAccessibilityDisplaySettings()
                 }
                 Button("Dock size") {
                     model.openDockSettings()
@@ -381,6 +381,10 @@ private struct DisplayCaptureSection: View {
             .disabled(!isCapturing)
 
             if isCapturing {
+                Text("When finished, return to Screen Shifter and select Complete capture.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
                 Button("Complete capture") {
                     Task {
                         await model.completeCapture(for: display)

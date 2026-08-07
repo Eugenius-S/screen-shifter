@@ -1,5 +1,20 @@
 # Screen Shifter
 
-Screen Shifter is a native macOS menu bar app that restores saved display scaling profiles locally when known displays connect.
+Screen Shifter is a native macOS menu bar app that saves and restores display scaling profiles for known displays.
 
-The repository uses Agent Foundation v1 and stores the app source in GitHub.
+It runs locally on macOS 14 or newer, has no runtime account or service dependency, and can receive signed updates from a public GitHub release repository.
+
+## Build
+
+```sh
+swift build
+swift test
+```
+
+## Package
+
+```sh
+./scripts/package-dmg.sh
+```
+
+See [docs/packaging.md](docs/packaging.md) for signed packaging and manual release publishing.

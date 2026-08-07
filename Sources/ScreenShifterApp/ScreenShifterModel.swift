@@ -12,14 +12,35 @@ protocol UpdateChecking {
     func checkForUpdates() -> Bool
 }
 
-@MainActor
-private final class GitHubReleaseUpdateChecker: UpdateChecking {
-    func checkForUpdates() -> Bool {
-        guard let url = URL(string: "https://github.com/Eugenius-S/screen-shifter/releases/latest") else {
-            return false
-        }
+enum GitHubUpdateConfiguration {
+    static let feedURL = URL(string: "https://github.com/Eugenius-S/screen-shifter/releases/latest/download/appcast.xml")!
+}
 
-        return NSWorkspace.shared.open(url)
+enum SystemSettingsDestination {
+    case displayResolution
+    case accessibilityDisplay
+    case dock
+
+    var url: URL? {
+        switch self {
+        case .displayResolution:
+            return URL(string: "x-apple.systempreferences:com.apple.Displays-Settings.extension")
+        case .accessibilityDisplay:
+            return URL(string: "x-apple.systempreferences:com.apple.preference.universalaccess?Seeing_Display")
+        case .dock:
+            return URL(string: "x-apple.systempreferences:com.apple.Desktop-Settings.extension")
+        }
+    }
+}
+
+@MainActor
+final class SparkleUpdaterDelegate: NSObject, SPUUpdaterDelegate {
+    var appcastURLString: String {
+        GitHubUpdateConfiguration.feedURL.absoluteString
+    }
+
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        appcastURLString
     }
 }
 
@@ -129,7 +150,7 @@ final class ScreenShifterModel: ObservableObject {
     private let sleepAssertion = SystemSleepAssertionController()
     private let updateChecker: UpdateChecking
 
-    init(updateChecker: UpdateChecking = GitHubReleaseUpdateChecker()) {
+    init(updateChecker: UpdateChecking) {
         automationPaused = UserDefaults.standard.bool(forKey: "automationPaused")
         keepExternalDisplayAwake = UserDefaults.standard.bool(forKey: "keepExternalDisplayAwake")
         launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
@@ -340,15 +361,15 @@ final class ScreenShifterModel: ObservableObject {
     }
 
     func openDisplaySettings() {
-        openSystemSettings("x-apple.systempreferences:com.apple.Displays-Settings.extension")
+        openSystemSettings(.displayResolution)
     }
 
-    func openAppearanceSettings() {
-        openSystemSettings("x-apple.systempreferences:com.apple.Appearance-Settings.extension")
+    func openAccessibilityDisplaySettings() {
+        openSystemSettings(.accessibilityDisplay)
     }
 
     func openDockSettings() {
-        openSystemSettings("x-apple.systempreferences:com.apple.dock")
+        openSystemSettings(.dock)
     }
 
     func checkForUpdates() {
@@ -393,8 +414,8 @@ final class ScreenShifterModel: ObservableObject {
         }
     }
 
-    private func openSystemSettings(_ address: String) {
-        guard let url = URL(string: address) else {
+    private func openSystemSettings(_ destination: SystemSettingsDestination) {
+        guard let url = destination.url else {
             errorMessage = "Could not open System Settings."
             return
         }

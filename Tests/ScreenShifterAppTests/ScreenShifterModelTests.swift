@@ -5,6 +5,39 @@ import DisplayCore
 
 @MainActor
 final class ScreenShifterModelTests: XCTestCase {
+    func testGitHubUpdateConfigurationUsesPublicURLs() {
+        XCTAssertEqual(
+            GitHubUpdateConfiguration.feedURL.absoluteString,
+            "https://github.com/Eugenius-S/screen-shifter/releases/latest/download/appcast.xml"
+        )
+        XCTAssertNil(GitHubUpdateConfiguration.feedURL.user)
+        XCTAssertNil(GitHubUpdateConfiguration.feedURL.password)
+    }
+
+    func testSparkleUpdaterDelegateUsesAppcastURL() {
+        let delegate = SparkleUpdaterDelegate()
+
+        XCTAssertEqual(
+            delegate.appcastURLString,
+            GitHubUpdateConfiguration.feedURL.absoluteString
+        )
+    }
+
+    func testSystemSettingsDestinationsOpenSpecificPanes() {
+        XCTAssertEqual(
+            SystemSettingsDestination.displayResolution.url?.absoluteString,
+            "x-apple.systempreferences:com.apple.Displays-Settings.extension"
+        )
+        XCTAssertEqual(
+            SystemSettingsDestination.accessibilityDisplay.url?.absoluteString,
+            "x-apple.systempreferences:com.apple.preference.universalaccess?Seeing_Display"
+        )
+        XCTAssertEqual(
+            SystemSettingsDestination.dock.url?.absoluteString,
+            "x-apple.systempreferences:com.apple.Desktop-Settings.extension"
+        )
+    }
+
     func testCaptureStatusSymbolReflectsCaptureState() {
         let profile = DisplayProfile(
             displayIdentity: .builtIn,
@@ -29,7 +62,7 @@ final class ScreenShifterModelTests: XCTestCase {
         )
     }
 
-    func testCheckForUpdatesReportsSuccessWhenReleasePageOpens() {
+    func testCheckForUpdatesReportsSuccessWhenUpdateCheckStarts() {
         let checker = FakeUpdateChecker(result: true)
         let model = ScreenShifterModel(updateChecker: checker)
 
@@ -40,7 +73,7 @@ final class ScreenShifterModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
     }
 
-    func testCheckForUpdatesReportsFailureWhenReleasePageCannotOpen() {
+    func testCheckForUpdatesReportsFailureWhenUpdateCheckCannotStart() {
         let checker = FakeUpdateChecker(result: false)
         let model = ScreenShifterModel(updateChecker: checker)
 
