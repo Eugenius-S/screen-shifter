@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import DisplayCore
 import Sparkle
 import SwiftUI
@@ -108,10 +109,12 @@ private struct MenuBarContent: View {
 private struct SettingsView: View {
     @ObservedObject var model: ScreenShifterModel
     @State private var selectedExternalDisplayID: UInt32?
+    @State private var expandedDisplayID: UInt32?
 
     var body: some View {
         let builtInDisplay = model.displays.first { $0.isBuiltIn }
         let externalDisplays = model.displays.filter { !$0.isBuiltIn }
+        let activeDisplayID = CGMainDisplayID()
         let selectedExternalDisplay = externalDisplays.first {
             $0.displayID == selectedExternalDisplayID
         } ?? externalDisplays.first
@@ -153,11 +156,27 @@ private struct SettingsView: View {
             }
 
             if let builtInDisplay {
-                DisplayCaptureSection(display: builtInDisplay, model: model)
+                DisplayCaptureSection(
+                    display: builtInDisplay,
+                    isActive: builtInDisplay.displayID == activeDisplayID,
+                    isExpanded: expansionBinding(for: builtInDisplay.displayID),
+                    model: model
+                )
             }
 
             if let selectedExternalDisplay {
-                DisplayCaptureSection(display: selectedExternalDisplay, model: model)
+                DisplayCaptureSection(
+                    display: selectedExternalDisplay,
+                    isActive: selectedExternalDisplay.displayID == activeDisplayID,
+                    isExpanded: expansionBinding(for: selectedExternalDisplay.displayID),
+                    model: model
+                )
+            } else {
+                DisclosureGroup("External display") {
+                    Text("Not detected")
+                        .foregroundStyle(.secondary)
+                }
+                .disabled(true)
             }
 
             if let errorMessage = model.errorMessage {
@@ -223,6 +242,12 @@ private struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 420)
         .padding()
+        .onAppear {
+            synchronizeExpandedDisplay()
+        }
+        .onChange(of: model.displays.map(\.displayID)) { _, _ in
+            synchronizeExpandedDisplay()
+        }
         .alert("Reset Display to Default", isPresented: $model.isResetConfirmationPresented) {
             Button("Cancel", role: .cancel) {}
             Button("Reset", role: .destructive) {
@@ -234,10 +259,36 @@ private struct SettingsView: View {
             Text("This removes the saved profile for \(model.resetCandidate?.name ?? "this display") and restores the system default scaling.")
         }
     }
+
+    private func expansionBinding(for displayID: UInt32) -> Binding<Bool> {
+        Binding(
+            get: { expandedDisplayID == displayID },
+            set: { isExpanded in
+                expandedDisplayID = isExpanded ? displayID : nil
+            }
+        )
+    }
+
+    private func synchronizeExpandedDisplay() {
+        let availableDisplays = model.displays
+        guard !availableDisplays.isEmpty else {
+            expandedDisplayID = nil
+            return
+        }
+
+        let activeDisplayID = CGMainDisplayID()
+        if availableDisplays.contains(where: { $0.displayID == activeDisplayID }) {
+            expandedDisplayID = activeDisplayID
+        } else {
+            expandedDisplayID = availableDisplays.first?.displayID
+        }
+    }
 }
 
 private struct DisplayCaptureSection: View {
     let display: ConnectedDisplay
+    let isActive: Bool
+    @Binding var isExpanded: Bool
     @ObservedObject var model: ScreenShifterModel
 
     private var hasSavedProfile: Bool {
@@ -256,7 +307,7 @@ private struct DisplayCaptureSection: View {
     }
 
     var body: some View {
-        Section(display.name) {
+        DisclosureGroup(isExpanded: $isExpanded) {
             Label(captureStatus, systemImage: hasSavedProfile ? "checkmark.circle" : "circle.dashed")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -289,6 +340,16 @@ private struct DisplayCaptureSection: View {
                 model.prepareReset(for: display)
             }
             .disabled(!hasSavedProfile)
+        } label: {
+            HStack {
+                Text(display.name)
+
+                if isActive {
+                    Label("Active", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 }
