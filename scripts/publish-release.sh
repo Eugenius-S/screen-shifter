@@ -7,6 +7,7 @@ release_repository=${RELEASE_REPOSITORY:-Eugenius-S/screen-shifter}
 public_key=${SPARKLE_PUBLIC_ED_KEY:-}
 private_key=${SPARKLE_PRIVATE_ED_KEY:-}
 feed_url=${SPARKLE_FEED_URL:-https://github.com/$release_repository/releases/latest/download/appcast.xml}
+codesign_identity=${CODESIGN_IDENTITY:--}
 release_dir="$project_root/.build/release/$version"
 
 case "$version" in
@@ -19,6 +20,10 @@ esac
 if test -z "$public_key" || test -z "$private_key"; then
     printf 'SPARKLE_PUBLIC_ED_KEY and SPARKLE_PRIVATE_ED_KEY are required\n' >&2
     exit 1
+fi
+
+if test "$codesign_identity" = "-"; then
+    printf 'CODESIGN_IDENTITY is not set; using ad-hoc signing for this personal release\n' >&2
 fi
 
 for command_name in gh swift; do
@@ -46,6 +51,7 @@ mkdir -p "$release_dir"
 VERSION="$version" \
 SPARKLE_FEED_URL="$feed_url" \
 SPARKLE_PUBLIC_ED_KEY="$public_key" \
+CODESIGN_IDENTITY="$codesign_identity" \
 OUTPUT_ROOT="$release_dir" \
 ./scripts/package-dmg.sh
 

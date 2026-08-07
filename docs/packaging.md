@@ -18,6 +18,8 @@ VERSION=0.1.0 \
 
 The resulting app must be notarized and stapled before distribution. Notarization credentials and team identifiers are intentionally supplied by the release environment, not stored in this repository.
 
+When `CODESIGN_IDENTITY` is not set, `scripts/publish-release.sh` uses ad-hoc signing so a personal release can still be tested locally. Ad-hoc builds are not suitable for broad distribution or Gatekeeper-friendly downloads; use a Developer ID Application identity for those releases.
+
 Sparkle is embedded in `Contents/Frameworks`. The package script uses this default appcast URL:
 
 ```text
