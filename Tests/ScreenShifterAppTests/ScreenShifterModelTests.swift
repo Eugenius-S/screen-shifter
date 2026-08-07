@@ -1,8 +1,34 @@
 import XCTest
+import ScreenShifterDomain
+import DisplayCore
 @testable import ScreenShifterApp
 
 @MainActor
 final class ScreenShifterModelTests: XCTestCase {
+    func testCaptureStatusSymbolReflectsCaptureState() {
+        let profile = DisplayProfile(
+            displayIdentity: .builtIn,
+            logicalWidth: 1512,
+            logicalHeight: 982,
+            isHiDPI: true
+        )
+
+        XCTAssertEqual(
+            DisplayCapturePresentation.statusSymbol(
+                for: .capturing,
+                hasSavedProfile: true
+            ),
+            "record.circle"
+        )
+        XCTAssertEqual(
+            DisplayCapturePresentation.statusSymbol(
+                for: .completed(profile),
+                hasSavedProfile: false
+            ),
+            "checkmark.circle.fill"
+        )
+    }
+
     func testCheckForUpdatesReportsSuccessWhenReleasePageOpens() {
         let checker = FakeUpdateChecker(result: true)
         let model = ScreenShifterModel(updateChecker: checker)

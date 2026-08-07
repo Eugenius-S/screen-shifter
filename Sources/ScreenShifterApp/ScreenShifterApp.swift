@@ -206,7 +206,17 @@ private struct SettingsView: View {
                 }
             }
 
-            Section {
+            Section("Automation") {
+                Toggle(
+                    "Pause Automation",
+                    isOn: $model.automationPaused
+                )
+                Text("Prevents automatic display restoration until resumed.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Startup") {
                 Toggle(
                     "Launch at Login",
                     isOn: Binding(
@@ -233,7 +243,7 @@ private struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section {
+            Section("Updates") {
                 Button("Check for updates") {
                     model.checkForUpdates()
                 }
@@ -285,6 +295,22 @@ private struct SettingsView: View {
     }
 }
 
+enum DisplayCapturePresentation {
+    static func statusSymbol(
+        for state: DisplayCaptureState,
+        hasSavedProfile: Bool
+    ) -> String {
+        switch state {
+        case .idle:
+            return hasSavedProfile ? "checkmark.circle" : "circle.dashed"
+        case .capturing:
+            return "record.circle"
+        case .completed:
+            return "checkmark.circle.fill"
+        }
+    }
+}
+
 private struct DisplayCaptureSection: View {
     let display: ConnectedDisplay
     let isActive: Bool
@@ -296,7 +322,7 @@ private struct DisplayCaptureSection: View {
     }
 
     private var captureStatus: String {
-        switch model.captureState(for: display) {
+        switch captureState {
         case .idle:
             return hasSavedProfile ? "Saved profile available." : "No saved profile."
         case .capturing:
@@ -306,35 +332,62 @@ private struct DisplayCaptureSection: View {
         }
     }
 
+    private var captureState: DisplayCaptureState {
+        model.captureState(for: display)
+    }
+
+    private var isCapturing: Bool {
+        captureState.canComplete
+    }
+
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
-            Label(captureStatus, systemImage: hasSavedProfile ? "checkmark.circle" : "circle.dashed")
+            Label(
+                captureStatus,
+                systemImage: DisplayCapturePresentation.statusSymbol(
+                    for: captureState,
+                    hasSavedProfile: hasSavedProfile
+                )
+            )
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-            Button("Start capture settings") {
-                model.startCapture(for: display)
+            if !isCapturing {
+                Button("Start capture settings") {
+                    model.startCapture(for: display)
+                }
+                .buttonStyle(.borderedProminent)
             }
 
-            Button("Display scaling") {
-                model.openDisplaySettings()
-            }
-            Button("HiDPI mode") {
-                model.openDisplaySettings()
-            }
-            Button("Font size") {
-                model.openAppearanceSettings()
-            }
-            Button("Dock size") {
-                model.openDockSettings()
-            }
+            Text("Adjust in System Settings")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
 
-            Button("Complete capture") {
-                Task {
-                    await model.completeCapture(for: display)
+            Group {
+                Button("Display scaling") {
+                    model.openDisplaySettings()
+                }
+                Button("HiDPI mode") {
+                    model.openDisplaySettings()
+                }
+                Button("Font size") {
+                    model.openAppearanceSettings()
+                }
+                Button("Dock size") {
+                    model.openDockSettings()
                 }
             }
-            .disabled(!model.captureState(for: display).canComplete)
+            .disabled(!isCapturing)
+
+            if isCapturing {
+                Button("Complete capture") {
+                    Task {
+                        await model.completeCapture(for: display)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
 
             Button("Reset default", role: .destructive) {
                 model.prepareReset(for: display)
