@@ -18,14 +18,21 @@ struct ScreenShifterApp: App {
         )
         self.updaterController = updaterController
         self.updaterDelegate = updaterDelegate
-        _model = StateObject(
-            wrappedValue: ScreenShifterModel(
-                inventory: SystemDisplayInventory(),
-                modeApplier: SystemDisplayModeApplier(),
-                mainDisplayIDProvider: SystemMainDisplayIDProvider(),
-                updateChecker: SparkleUpdateChecker(updater: updaterController.updater)
-            )
+        // Plan 001 step 1: construct the model first so we can hand the same
+        // instance to a bootstrap task. Without this, `init` would only
+        // register observers and the persisted profile cache would stay
+        // empty until the user opened the menu and triggered Quit's
+        // `.task { await model.refresh() }` modifier.
+        let model = ScreenShifterModel(
+            inventory: SystemDisplayInventory(),
+            modeApplier: SystemDisplayModeApplier(),
+            mainDisplayIDProvider: SystemMainDisplayIDProvider(),
+            updateChecker: SparkleUpdateChecker(updater: updaterController.updater)
         )
+        _model = StateObject(wrappedValue: model)
+        Task { @MainActor in
+            await model.bootstrap()
+        }
     }
 
     var body: some Scene {
@@ -51,9 +58,6 @@ private struct MenuBarContent: View {
         }
         Button("Quit") {
             NSApplication.shared.terminate(nil)
-        }
-        .task {
-            await model.refresh()
         }
     }
 }

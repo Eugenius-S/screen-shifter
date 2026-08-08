@@ -125,6 +125,7 @@ final class ScreenShifterModel: ObservableObject {
     @Published var isResetConfirmationPresented = false
     @Published private(set) var resetCandidate: ConnectedDisplay?
     @Published private(set) var launchAtLoginEnabled: Bool
+    @Published private(set) var isReady: Bool = false
     @Published var keepExternalDisplayAwake: Bool {
         didSet {
             UserDefaults.standard.set(keepExternalDisplayAwake, forKey: "keepExternalDisplayAwake")
@@ -142,10 +143,15 @@ final class ScreenShifterModel: ObservableObject {
     private let profileStore: DisplayProfileStoring
     private let logStore: LocalLogStore
     private var notificationTokens: [NSObjectProtocol] = []
-    private var scheduledAutomation: Task<Void, Never>?
+    // Internal so tests can await the scheduled automation task via
+    // `@testable import ScreenShifterApp`. Do not mutate from production
+    // code outside the scheduler.
+    var scheduledAutomation: Task<Void, Never>?
     private var cooldownUntil: Date?
     private var wakeProtectionUntil: Date?
     private var lastObservedTopology: DisplayTopology?
+    private var hasPendingTopologyChange: Bool = false
+    private let automationDelayNanoseconds: UInt64
     private let sleepAssertion = SystemSleepAssertionController()
     private let updateChecker: UpdateChecking
     let mainDisplayIDProvider: MainDisplayIDProviding
@@ -156,7 +162,8 @@ final class ScreenShifterModel: ObservableObject {
         mainDisplayIDProvider: MainDisplayIDProviding,
         profileStore: DisplayProfileStoring = UserDefaultsProfileStore(),
         logStore: LocalLogStore = LocalLogStore(),
-        updateChecker: UpdateChecking
+        updateChecker: UpdateChecking,
+        automationDelayNanoseconds: UInt64 = 2_000_000_000
     ) {
         self.inventory = inventory
         self.modeApplier = modeApplier
@@ -164,6 +171,7 @@ final class ScreenShifterModel: ObservableObject {
         self.profileStore = profileStore
         self.logStore = logStore
         self.updateChecker = updateChecker
+        self.automationDelayNanoseconds = automationDelayNanoseconds
         automationPaused = UserDefaults.standard.bool(forKey: "automationPaused")
         keepExternalDisplayAwake = UserDefaults.standard.bool(forKey: "keepExternalDisplayAwake")
         launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
@@ -179,6 +187,34 @@ final class ScreenShifterModel: ObservableObject {
 
     deinit {
         notificationTokens.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    /// Hydrates the profile cache, inventory, and log before observers can
+    /// trigger an automatic apply with an empty cache.
+    ///
+    /// Observers are registered in `init` but the persisted profile store is
+    /// loaded asynchronously. A display notification received before
+    /// `bootstrap()` completes sets `hasPendingTopologyChange`; after
+    /// hydration this method replays that notification once. Idempotent: a
+    /// second call is a no-op.
+    func bootstrap() async {
+        guard !isReady else {
+            return
+        }
+
+        await refresh()
+        isReady = true
+
+        if hasPendingTopologyChange {
+            hasPendingTopologyChange = false
+            // The notification arrived before we knew the initial inventory.
+            // Reset the topology baseline so the replay sees the transition
+            // from "no observation" to the new state, which is what
+            // `AutomaticDisplayChangePolicy.shouldApply` needs to schedule
+            // the apply.
+            lastObservedTopology = nil
+            handleDisplayChangeNotification()
+        }
     }
 
     func refresh() async {
@@ -494,6 +530,16 @@ final class ScreenShifterModel: ObservableObject {
     }
 
     func handleDisplayChangeNotification() {
+        // Plan 001 step 1: defer automatic work until bootstrap has loaded
+        // persisted profiles. A display notification that arrives between
+        // `init` and `bootstrap()` completion would otherwise build a lookup
+        // from an empty `savedProfiles` cache and silently skip every saved
+        // profile.
+        guard isReady else {
+            hasPendingTopologyChange = true
+            return
+        }
+
         guard let currentDisplays = try? inventory.connectedDisplays() else {
             return
         }
@@ -546,7 +592,11 @@ final class ScreenShifterModel: ObservableObject {
 
         scheduledAutomation?.cancel()
         scheduledAutomation = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            // Plan 001 step 1: the production scheduler waits two seconds so a
+            // burst of plug/unplug events only fires one apply. Tests pass
+            // `automationDelayNanoseconds: 0` to avoid real-time waits.
+            let delay = self?.automationDelayNanoseconds ?? 0
+            try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled else {
                 return
             }

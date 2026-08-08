@@ -171,7 +171,10 @@ final class ScreenShifterModelTests: XCTestCase {
         let applier = FakeDisplayModeApplier()
         let model = makeModel(inventory: inventory, modeApplier: applier, profileStore: store)
 
-        await model.refresh()
+        // Plan 001 step 1: handleDisplayChangeNotification is gated on
+        // isReady, which only `bootstrap()` sets. A direct `refresh()` no
+        // longer arms the scheduler.
+        await model.bootstrap()
         XCTAssertTrue(applier.calls.isEmpty)
 
         inventory.displaysToReturn = [builtIn, external]
@@ -379,7 +382,8 @@ final class ScreenShifterModelTests: XCTestCase {
         mainDisplayIDProvider: FakeMainDisplayIDProvider = FakeMainDisplayIDProvider(),
         profileStore: DisplayProfileStoring = InMemoryProfileStore(),
         logStore: LocalLogStore = LocalLogStore(),
-        checker: UpdateChecking = FakeUpdateChecker(result: true)
+        checker: UpdateChecking = FakeUpdateChecker(result: true),
+        automationDelayNanoseconds: UInt64 = 0
     ) -> ScreenShifterModel {
         ScreenShifterModel(
             inventory: inventory,
@@ -387,7 +391,8 @@ final class ScreenShifterModelTests: XCTestCase {
             mainDisplayIDProvider: mainDisplayIDProvider,
             profileStore: profileStore,
             logStore: logStore,
-            updateChecker: checker
+            updateChecker: checker,
+            automationDelayNanoseconds: automationDelayNanoseconds
         )
     }
 
@@ -396,6 +401,190 @@ final class ScreenShifterModelTests: XCTestCase {
         let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("screen-shifter-test-\(UUID().uuidString).log")
         return LocalLogStore(fileURL: tempURL)
+    }
+
+    // Plan 001 step 1: cold start without a menu-driven refresh must still
+    // apply saved profiles once an external display appears. Before this
+    // change, a display notification between `init` and the first user
+    // action would build a lookup against an empty cache and skip the
+    // saved profile.
+    func testBootstrapHydratesProfilesBeforeAutomaticApply() async throws {
+        let inventory = FakeDisplayInventory()
+        let builtIn = ConnectedDisplay(
+            displayID: 1,
+            identity: .builtIn,
+            name: "Built-in",
+            isBuiltIn: true,
+            currentMode: nil,
+            availableModes: []
+        )
+        let external = ConnectedDisplay(
+            displayID: 2,
+            identity: .external(
+                vendorID: 1,
+                productID: 2,
+                serialNumber: 3,
+                name: "Ext",
+                physicalWidthMillimeters: 0,
+                physicalHeightMillimeters: 0
+            ),
+            name: "Ext",
+            isBuiltIn: false,
+            currentMode: nil,
+            availableModes: []
+        )
+
+        // Cold start: only the built-in display is connected and the
+        // persisted store already has a profile for the (not yet present)
+        // external display.
+        inventory.displaysToReturn = [builtIn]
+        let profile = DisplayProfile(
+            displayIdentity: external.identity,
+            logicalWidth: 1920,
+            logicalHeight: 1080,
+            isHiDPI: false
+        )
+        let store = InMemoryProfileStore()
+        await store.save(profile)
+        let applier = FakeDisplayModeApplier()
+        let model = makeModel(
+            inventory: inventory,
+            modeApplier: applier,
+            profileStore: store
+        )
+
+        // Hydrate the cache without going through any menu view.
+        await model.bootstrap()
+        XCTAssertEqual(model.savedProfiles.count, 1)
+        XCTAssertFalse(model.isReady == false)
+
+        // External display appears → automatic trigger.
+        inventory.displaysToReturn = [builtIn, external]
+        model.handleDisplayChangeNotification()
+        if let scheduled = model.scheduledAutomation {
+            await scheduled.value
+        }
+
+        XCTAssertEqual(applier.calls.count, 1)
+        XCTAssertEqual(applier.calls.first?.kind, .apply)
+        XCTAssertEqual(applier.calls.first?.displayID, external.displayID)
+        XCTAssertEqual(applier.lastAppliedProfile?.displayIdentity, external.identity)
+    }
+
+    // Plan 001 step 1: a display notification that arrives before
+    // `bootstrap()` completes must not silently drop; bootstrap replays it
+    // once the persisted cache is hydrated.
+    func testDisplayChangeBeforeBootstrapQueuesPendingNotification() async throws {
+        let inventory = FakeDisplayInventory()
+        let builtIn = ConnectedDisplay(
+            displayID: 1,
+            identity: .builtIn,
+            name: "Built-in",
+            isBuiltIn: true,
+            currentMode: nil,
+            availableModes: []
+        )
+        let external = ConnectedDisplay(
+            displayID: 2,
+            identity: .external(
+                vendorID: 1,
+                productID: 2,
+                serialNumber: 3,
+                name: "Ext",
+                physicalWidthMillimeters: 0,
+                physicalHeightMillimeters: 0
+            ),
+            name: "Ext",
+            isBuiltIn: false,
+            currentMode: nil,
+            availableModes: []
+        )
+
+        // Empty initial inventory so the first notification flips the
+        // topology from nothing to {built-in, external}.
+        inventory.displaysToReturn = []
+        let profile = DisplayProfile(
+            displayIdentity: external.identity,
+            logicalWidth: 1920,
+            logicalHeight: 1080,
+            isHiDPI: false
+        )
+        let store = InMemoryProfileStore()
+        await store.save(profile)
+        let applier = FakeDisplayModeApplier()
+        let model = makeModel(
+            inventory: inventory,
+            modeApplier: applier,
+            profileStore: store
+        )
+
+        // Display change arrives BEFORE bootstrap. The handler must not
+        // apply against an empty cache; it must record a pending flag.
+        inventory.displaysToReturn = [builtIn, external]
+        model.handleDisplayChangeNotification()
+        XCTAssertTrue(applier.calls.isEmpty)
+
+        // Bootstrap hydrates the cache and replays the pending notification.
+        await model.bootstrap()
+        if let scheduled = model.scheduledAutomation {
+            await scheduled.value
+        }
+
+        XCTAssertEqual(applier.calls.count, 1)
+        XCTAssertEqual(applier.calls.first?.displayID, external.displayID)
+        XCTAssertEqual(applier.lastAppliedProfile?.displayIdentity, external.identity)
+    }
+
+    // Plan 001 step 1: `bootstrap()` must be idempotent so a second call
+    // does not re-run the persistence load or replay the pending
+    // notification twice.
+    func testBootstrapIsIdempotent() async throws {
+        let inventory = FakeDisplayInventory()
+        let external = ConnectedDisplay(
+            displayID: 2,
+            identity: .external(
+                vendorID: 1,
+                productID: 2,
+                serialNumber: 3,
+                name: "Ext",
+                physicalWidthMillimeters: 0,
+                physicalHeightMillimeters: 0
+            ),
+            name: "Ext",
+            isBuiltIn: false,
+            currentMode: nil,
+            availableModes: []
+        )
+        inventory.displaysToReturn = [external]
+        let profile = DisplayProfile(
+            displayIdentity: external.identity,
+            logicalWidth: 1920,
+            logicalHeight: 1080,
+            isHiDPI: false
+        )
+        let store = InMemoryProfileStore()
+        await store.save(profile)
+        let applier = FakeDisplayModeApplier()
+        let model = makeModel(
+            inventory: inventory,
+            modeApplier: applier,
+            profileStore: store
+        )
+
+        await model.bootstrap()
+        XCTAssertTrue(model.isReady)
+
+        // Trigger an automatic apply, let the scheduler run, then call
+        // bootstrap again. The second call must not enqueue a second
+        // apply and must not touch the cache.
+        model.handleDisplayChangeNotification()
+        if let scheduled = model.scheduledAutomation {
+            await scheduled.value
+        }
+        let callsAfterFirst = applier.calls.count
+
+        await model.bootstrap()
+        XCTAssertEqual(applier.calls.count, callsAfterFirst)
     }
 }
 
