@@ -119,7 +119,7 @@ final class ScreenShifterModel: ObservableObject {
     @Published private(set) var displays: [ConnectedDisplay] = []
     @Published private(set) var savedProfiles: [DisplayProfile] = []
     @Published private(set) var captureStates: [DisplayIdentity: DisplayCaptureState] = [:]
-    @Published private(set) var errorMessage: String?
+    @Published private(set) var errorMessage: ModelError?
     @Published private(set) var captureMessage: String?
     @Published private(set) var logText = ""
     @Published var isResetConfirmationPresented = false
@@ -181,7 +181,7 @@ final class ScreenShifterModel: ObservableObject {
             updateSleepAssertion()
             errorMessage = nil
         } catch {
-            errorMessage = "Could not read connected displays."
+            errorMessage = .inventoryReadFailed
         }
 
         savedProfiles = await profileStore.profiles()
@@ -218,7 +218,7 @@ final class ScreenShifterModel: ObservableObject {
                 captureStates[display.identity] = DisplayCaptureStateMachine.cancel(
                     from: captureState(for: display)
                 )
-                errorMessage = "Could not capture \(display.name); the display is no longer available."
+                errorMessage = .displayNoLongerAvailable(display: display.name)
                 return
             }
 
@@ -228,11 +228,13 @@ final class ScreenShifterModel: ObservableObject {
                 from: .capturing,
                 profile: profile
             )
+            errorMessage = nil
             captureMessage = "Captured settings for \(display.name)."
             await record(level: .info, message: captureMessage ?? "Captured display settings.")
         } catch {
-            errorMessage = "Could not capture settings for \(display.name)."
-            await record(level: .error, message: errorMessage ?? "Could not capture display settings.")
+            let error: ModelError = .captureFailed(display: display.name)
+            errorMessage = error
+            await record(level: .error, message: error.message)
         }
     }
 
@@ -264,11 +266,13 @@ final class ScreenShifterModel: ObservableObject {
             )
             resetCandidate = nil
             isResetConfirmationPresented = false
+            errorMessage = nil
             captureMessage = "Reset \(display.name) to the system default."
             await record(level: .info, message: captureMessage ?? "Reset display to the system default.")
         } catch {
-            errorMessage = "Could not reset \(display.name) to the system default."
-            await record(level: .error, message: errorMessage ?? "Could not reset display.")
+            let error: ModelError = .resetFailed(display: display.name)
+            errorMessage = error
+            await record(level: .error, message: error.message)
         }
     }
 
@@ -291,8 +295,9 @@ final class ScreenShifterModel: ObservableObject {
             lastObservedTopology = DisplayTopology(displays: displays)
             updateSleepAssertion()
         } catch {
-            errorMessage = "Could not read connected displays."
-            await record(level: .error, message: errorMessage ?? "Could not read connected displays.")
+            let error: ModelError = .inventoryReadFailed
+            errorMessage = error
+            await record(level: .error, message: error.message)
             return
         }
 
@@ -335,8 +340,9 @@ final class ScreenShifterModel: ObservableObject {
                 message: isAutomatic ? "Automatic apply completed." : (captureMessage ?? "Apply completed.")
             )
         } else {
-            errorMessage = "Could not apply profiles for: \(errors.joined(separator: ", "))."
-            await record(level: .error, message: errorMessage ?? "Could not apply saved profiles.")
+            let error: ModelError = .applyFailed(displays: errors)
+            errorMessage = error
+            await record(level: .error, message: error.message)
         }
     }
 
@@ -344,8 +350,9 @@ final class ScreenShifterModel: ObservableObject {
         do {
             try await logStore.clear()
             logText = ""
+            errorMessage = nil
         } catch {
-            errorMessage = "Could not clear the local log."
+            errorMessage = .logWriteFailed
         }
     }
 
@@ -372,10 +379,11 @@ final class ScreenShifterModel: ObservableObject {
 
     func checkForUpdates() {
         guard updateChecker.checkForUpdates() else {
-            errorMessage = "Could not start the update check."
+            errorMessage = .updateCheckFailed
             return
         }
 
+        errorMessage = nil
         captureMessage = "Started update check."
     }
 
@@ -388,10 +396,13 @@ final class ScreenShifterModel: ObservableObject {
             }
 
             launchAtLoginEnabled = enabled
+            errorMessage = nil
         } catch {
-            errorMessage = enabled
-                ? "Could not enable Launch at Login."
-                : "Could not disable Launch at Login."
+            errorMessage = .launchAtLoginFailed(
+                reason: enabled
+                    ? "Could not enable Launch at Login."
+                    : "Could not disable Launch at Login."
+            )
         }
     }
 
@@ -399,7 +410,7 @@ final class ScreenShifterModel: ObservableObject {
         do {
             logText = try await logStore.text()
         } catch {
-            errorMessage = "Could not read the local log."
+            errorMessage = .logWriteFailed
         }
     }
 
@@ -408,20 +419,22 @@ final class ScreenShifterModel: ObservableObject {
             try await logStore.append(level: level, message: message)
             await refreshLogs()
         } catch {
-            errorMessage = "Could not write the local log."
+            errorMessage = .logWriteFailed
         }
     }
 
     private func openSystemSettings(_ destination: SystemSettingsDestination) {
         guard let url = destination.url else {
-            errorMessage = "Could not open System Settings."
+            errorMessage = .systemSettingsUnavailable
             return
         }
 
         guard NSWorkspace.shared.open(url) else {
-            errorMessage = "Could not open System Settings."
+            errorMessage = .systemSettingsUnavailable
             return
         }
+
+        errorMessage = nil
     }
 
     private func registerAutomationObservers() {
@@ -489,11 +502,11 @@ final class ScreenShifterModel: ObservableObject {
             displays: displays
         )
         guard sleepAssertion.update(isEnabled: shouldPreventSleep) else {
-            errorMessage = "Could not change the external-display sleep setting."
+            errorMessage = .sleepAssertionFailed
             return
         }
 
-        if errorMessage == "Could not change the external-display sleep setting." {
+        if errorMessage == .sleepAssertionFailed {
             errorMessage = nil
         }
     }

@@ -133,7 +133,7 @@ private struct SettingsView: View {
 
             if let errorMessage = model.errorMessage {
                 Section("Error") {
-                    Text(errorMessage)
+                    Text(errorMessage.message)
                         .foregroundStyle(.red)
                 }
             }

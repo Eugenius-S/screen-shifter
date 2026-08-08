@@ -80,7 +80,7 @@ final class ScreenShifterModelTests: XCTestCase {
         model.checkForUpdates()
 
         XCTAssertEqual(checker.checkCallCount, 1)
-        XCTAssertEqual(model.errorMessage, "Could not start the update check.")
+        XCTAssertEqual(model.errorMessage, .updateCheckFailed)
     }
 
     func testRefreshPopulatesDisplaysFromInventory() async throws {
@@ -181,6 +181,97 @@ final class ScreenShifterModelTests: XCTestCase {
         XCTAssertEqual(applier.calls.first?.displayID, 2)
     }
 
+    func testInventoryReadFailureSetsInventoryReadFailedError() async throws {
+        struct InventoryError: Error {}
+        let inventory = FakeDisplayInventory()
+        inventory.errorToThrow = InventoryError()
+        let model = makeModel(inventory: inventory)
+
+        await model.refresh()
+
+        XCTAssertEqual(model.errorMessage, .inventoryReadFailed)
+    }
+
+    func testApplySavedSetupApplyErrorSetsTypedError() async throws {
+        struct ApplyError: Error {}
+        let inventory = FakeDisplayInventory()
+        let external = ConnectedDisplay(
+            displayID: 2,
+            identity: .external(vendorID: 1, productID: 2, serialNumber: 3, name: "Ext", physicalWidthMillimeters: 0, physicalHeightMillimeters: 0),
+            name: "Ext", isBuiltIn: false, currentMode: nil, availableModes: []
+        )
+        inventory.displaysToReturn = [external]
+        let profile = DisplayProfile(displayIdentity: external.identity, logicalWidth: 1920, logicalHeight: 1080, isHiDPI: false)
+        let store = InMemoryProfileStore()
+        await store.save(profile)
+        let applier = FakeDisplayModeApplier()
+        applier.applyError = ApplyError()
+        let model = makeModel(inventory: inventory, modeApplier: applier, profileStore: store)
+
+        await model.applySavedSetup(isAutomatic: false)
+
+        XCTAssertEqual(model.errorMessage, .applyFailed(displays: ["Ext"]))
+    }
+
+    func testClearLogsClearsErrorOnSuccess() async throws {
+        struct InventoryError: Error {}
+        let inventory = FakeDisplayInventory()
+        inventory.errorToThrow = InventoryError()
+        let logStore = makeTempLogStore()
+        let model = makeModel(inventory: inventory, logStore: logStore)
+
+        await model.refresh()
+        XCTAssertEqual(model.errorMessage, .inventoryReadFailed)
+
+        await model.clearLogs()
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testCompleteCaptureClearsErrorOnSuccess() async throws {
+        let inventory = FakeDisplayInventory()
+        let mode = DisplayModeDescriptor(
+            pixelWidth: 1920, pixelHeight: 1080,
+            logicalWidth: 1920, logicalHeight: 1080,
+            isHiDPI: false
+        )
+        let external = ConnectedDisplay(
+            displayID: 2,
+            identity: .external(vendorID: 1, productID: 2, serialNumber: 3, name: "Ext", physicalWidthMillimeters: 0, physicalHeightMillimeters: 0),
+            name: "Ext", isBuiltIn: false, currentMode: mode, availableModes: [mode]
+        )
+        inventory.displaysToReturn = [external]
+        let model = makeModel(inventory: inventory, profileStore: InMemoryProfileStore())
+
+        await model.refresh()
+        model.startCapture(for: external)
+        await model.completeCapture(for: external)
+
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testModelErrorMessageRendersUserFacingText() {
+        XCTAssertEqual(
+            ModelError.inventoryReadFailed.message,
+            "Could not read connected displays."
+        )
+        XCTAssertEqual(
+            ModelError.updateCheckFailed.message,
+            "Could not start the update check."
+        )
+        XCTAssertEqual(
+            ModelError.launchAtLoginFailed(reason: "Boom").message,
+            "Boom"
+        )
+        XCTAssertEqual(
+            ModelError.applyFailed(displays: ["A", "B"]).message,
+            "Could not apply profiles for: A, B."
+        )
+        XCTAssertEqual(
+            ModelError.sleepAssertionFailed.message,
+            "Could not change the external-display sleep setting."
+        )
+    }
+
     @MainActor
     private func makeModel(
         inventory: FakeDisplayInventory = FakeDisplayInventory(),
@@ -198,6 +289,13 @@ final class ScreenShifterModelTests: XCTestCase {
             logStore: logStore,
             updateChecker: checker
         )
+    }
+
+    @MainActor
+    private func makeTempLogStore() -> LocalLogStore {
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("screen-shifter-test-\(UUID().uuidString).log")
+        return LocalLogStore(fileURL: tempURL)
     }
 }
 

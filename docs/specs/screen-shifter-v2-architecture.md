@@ -40,11 +40,18 @@ Out of scope:
   enum ModelError: Equatable, Sendable {
       case sleepAssertionFailed
       case modeUnavailable(display: String)
-      case launchAtLoginFailed(String)
+      case launchAtLoginFailed(reason: String)
       case logWriteFailed
+      case captureFailed(display: String)
+      case displayNoLongerAvailable(display: String)
+      case resetFailed(display: String)
+      case applyFailed(displays: [String])
+      case systemSettingsUnavailable
+      case updateCheckFailed
+      case inventoryReadFailed
   }
   ```
-  The model publishes the current error; views render system-red text for any non-nil error and clear it on success.
+  The model publishes the current error; views render the user-facing text from `ModelError.message` for any non-nil error. User-action methods (`completeCapture`, `confirmReset`, `applySavedSetup`, `clearLogs`, `setLaunchAtLogin`, `checkForUpdates`, `openSystemSettings`) clear the error on success. Internal helpers (`refreshLogs`, `record`) only set the error on failure so they do not clobber an error set by the calling user action.
 
 ## Protocol surface (target)
 
