@@ -300,11 +300,24 @@ final class ScreenShifterModel: ObservableObject {
             return
         }
 
-        // P1-6: re-validate the inventory before applying. If the display
-        // disconnected between the user clicking Reset and confirming, skip
-        // the applier call (there is nothing to reset) and still remove the
-        // saved profile so it does not haunt a future reconnect.
-        let currentDisplays = (try? inventory.connectedDisplays()) ?? []
+        // Plan 001 step 2: a successful read that lacks the display means
+        // a disconnect (remove the profile, show the disconnect-aware
+        // message). A read failure is *neither* evidence of a disconnect
+        // nor permission to drop the profile: preserve it, surface the
+        // error, and clear the pending reset state so the dialog does not
+        // stay open on top of stale UI.
+        let currentDisplays: [ConnectedDisplay]
+        do {
+            currentDisplays = try inventory.connectedDisplays()
+        } catch {
+            let error: ModelError = .inventoryReadFailed
+            errorMessage = error
+            await record(level: .error, message: error.message)
+            resetCandidate = nil
+            isResetConfirmationPresented = false
+            return
+        }
+
         let stillConnected = currentDisplays.contains { $0.identity == display.identity }
 
         if stillConnected {

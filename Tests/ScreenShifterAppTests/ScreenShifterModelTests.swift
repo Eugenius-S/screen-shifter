@@ -586,6 +586,63 @@ final class ScreenShifterModelTests: XCTestCase {
         await model.bootstrap()
         XCTAssertEqual(applier.calls.count, callsAfterFirst)
     }
+
+    // Plan 001 step 2: a transient inventory read failure during Reset
+    // must not be misread as a disconnect. The profile is preserved and
+    // the user sees a typed inventory error instead of a silent drop.
+    func testConfirmResetPreservesProfileOnInventoryFailure() async throws {
+        struct InventoryError: Error {}
+
+        let inventory = FakeDisplayInventory()
+        let external = ConnectedDisplay(
+            displayID: 7,
+            identity: .external(
+                vendorID: 1,
+                productID: 2,
+                serialNumber: 3,
+                name: "Ext",
+                physicalWidthMillimeters: 0,
+                physicalHeightMillimeters: 0
+            ),
+            name: "Ext",
+            isBuiltIn: false,
+            currentMode: nil,
+            availableModes: []
+        )
+        inventory.displaysToReturn = [external]
+        let profile = DisplayProfile(
+            displayIdentity: external.identity,
+            logicalWidth: 1920,
+            logicalHeight: 1080,
+            isHiDPI: false
+        )
+        let store = InMemoryProfileStore()
+        await store.save(profile)
+        let applier = FakeDisplayModeApplier()
+        let model = makeModel(
+            inventory: inventory,
+            modeApplier: applier,
+            profileStore: store
+        )
+
+        await model.bootstrap()
+        model.prepareReset(for: external)
+        XCTAssertTrue(model.isResetConfirmationPresented)
+
+        // Inventory throws between prepare and confirm.
+        inventory.errorToThrow = InventoryError()
+
+        await model.confirmReset()
+
+        // No reset call, profile still in the store, typed error surfaced,
+        // pending reset state cleared so the dialog does not linger.
+        XCTAssertEqual(applier.calls, [])
+        let remaining = await store.profiles()
+        XCTAssertEqual(remaining.count, 1)
+        XCTAssertEqual(model.errorMessage, .inventoryReadFailed)
+        XCTAssertNil(model.resetCandidate)
+        XCTAssertFalse(model.isResetConfirmationPresented)
+    }
 }
 
 @MainActor
