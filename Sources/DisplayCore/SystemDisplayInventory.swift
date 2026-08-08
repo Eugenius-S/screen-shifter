@@ -3,6 +3,14 @@ import CoreGraphics
 import Foundation
 import ScreenShifterDomain
 
+// CoreGraphics' CGDisplayCopyAllDisplayModes takes a CFDictionary of options.
+// Passing nil omits scaled and HiDPI modes on macOS 14+, which made saved
+// external profiles appear unavailable even when the physical mode exists.
+// See P0-A in docs/audits/2026-08-08-code-audit.md.
+private func displayModeOptions() -> CFDictionary {
+    [kCGDisplayShowDuplicateLowResolutionModes: true] as CFDictionary
+}
+
 public struct DisplayModeDescriptor: Codable, Equatable, Sendable {
     public let pixelWidth: UInt32
     public let pixelHeight: UInt32
@@ -264,7 +272,7 @@ public struct SystemDisplayModeApplier {
         case .unavailable:
             return .unavailable
         case let .apply(desiredMode):
-            guard let nativeMode = (CGDisplayCopyAllDisplayModes(display.displayID, nil) as? [CGDisplayMode])?
+            guard let nativeMode = (CGDisplayCopyAllDisplayModes(display.displayID, displayModeOptions()) as? [CGDisplayMode])?
                 .first(where: { displayModeDescriptor(for: $0) == desiredMode })
             else {
                 throw DisplayModeApplicationError.modeUnavailable
@@ -321,7 +329,7 @@ public struct SystemDisplayInventory {
                 physicalWidthMillimeters: UInt32(displaySize.width.rounded()),
                 physicalHeightMillimeters: UInt32(displaySize.height.rounded())
             )
-        let availableModes = (CGDisplayCopyAllDisplayModes(displayID, nil) as? [CGDisplayMode] ?? [])
+        let availableModes = (CGDisplayCopyAllDisplayModes(displayID, displayModeOptions()) as? [CGDisplayMode] ?? [])
                 .map(displayModeDescriptor(for:))
 
         return ConnectedDisplay(

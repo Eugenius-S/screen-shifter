@@ -74,17 +74,13 @@ public protocol MainDisplayIDProviding: Sendable {
 1. **Single Settings entry point.** Drop `SettingsWindowController`. Use `Settings { SettingsView(model: model) }` and `openSettings` from `MenuBarContent`. The SwiftUI scene owns `@State` for selected external display and expansion.
 2. **Per-display capture only.** Remove `prepareCapture`, `confirmCapture`, `captureCandidates`, and the bulk-capture alert.
 3. **No manual Apply menu item.** Update `docs/project-brief.md` criterion 6 to reflect the new workflow; remove "Apply Saved Setup" from the menu bar spec. Document the rationale in the brief.
-4. **`CGDisplayCopyAllDisplayModes` options**:
+4. **`CGDisplayCopyAllDisplayModes` options** (passed as a CFDictionary whose keys are the `kCGDisplay*` CFString constants; passing `nil` omits scaled and HiDPI modes on macOS 14+):
    ```swift
-   let displayModeOptions: CGDisplayModeOption = [
-       .kCGDisplayShowDuplicateLowResolutionModes,
-       .kCGDisplayModeIsValid,
-       .kCGDisplayModeIsSafe,
-       .kCGDisplayModeIsInterlaced,
-       .kCGDisplayModeIsStretched,
-       .kCGDisplayModeIsTelevisionOutput
-   ]
+   private func displayModeOptions() -> CFDictionary {
+       [kCGDisplayShowDuplicateLowResolutionModes: true] as CFDictionary
+   }
    ```
+   Note: the Swift overlay does not expose a `CGDisplayModeOption` bitmask type. The `kCGDisplayModeIsValid`, `kCGDisplayModeIsSafe`, and similar constants are introspectors on `CGDisplayMode` instances, not dictionary keys for `CGDisplayCopyAllDisplayModes`. The single key `kCGDisplayShowDuplicateLowResolutionModes` is the only valid dictionary option for that API.
 5. **`setActivationPolicy` removed.** `LSUIElement=true` in `Info.plist` is the source of truth.
 6. **Refresh rate in profile.** Persisted at capture; used as a tiebreaker in mode selection; falls back to current rate if the saved rate is unavailable.
 7. **Typed error model.** `ModelError` replaces `errorMessage: String?`; success paths clear the error before mutating state.

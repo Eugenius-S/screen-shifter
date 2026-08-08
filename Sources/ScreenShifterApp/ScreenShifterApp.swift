@@ -24,7 +24,6 @@ struct ScreenShifterApp: App {
                 updateChecker: SparkleUpdateChecker(updater: updaterController.updater)
             )
         )
-        NSApplication.shared.setActivationPolicy(.regular)
     }
 
     var body: some Scene {
