@@ -643,6 +643,62 @@ final class ScreenShifterModelTests: XCTestCase {
         XCTAssertNil(model.resetCandidate)
         XCTAssertFalse(model.isResetConfirmationPresented)
     }
+
+    // Plan 001 step 4: an inventory read failure during an automatic
+    // apply must not arm the cooldown. If it did, every subsequent
+    // automatic attempt for the next three seconds would be blocked.
+    func testFailedInventoryReadDoesNotArmAutomaticCooldown() async throws {
+        struct InventoryError: Error {}
+
+        let inventory = FakeDisplayInventory()
+        let external = ConnectedDisplay(
+            displayID: 2,
+            identity: .external(
+                vendorID: 1,
+                productID: 2,
+                serialNumber: 3,
+                name: "Ext",
+                physicalWidthMillimeters: 0,
+                physicalHeightMillimeters: 0
+            ),
+            name: "Ext",
+            isBuiltIn: false,
+            currentMode: nil,
+            availableModes: []
+        )
+        inventory.displaysToReturn = [external]
+        let profile = DisplayProfile(
+            displayIdentity: external.identity,
+            logicalWidth: 1920,
+            logicalHeight: 1080,
+            isHiDPI: false
+        )
+        let store = InMemoryProfileStore()
+        await store.save(profile)
+        let applier = FakeDisplayModeApplier()
+        let model = makeModel(
+            inventory: inventory,
+            modeApplier: applier,
+            profileStore: store
+        )
+
+        await model.bootstrap()
+
+        // First automatic attempt: inventory throws.
+        inventory.errorToThrow = InventoryError()
+        await model.applySavedSetup(isAutomatic: true)
+        XCTAssertEqual(model.errorMessage, .inventoryReadFailed)
+        XCTAssertTrue(applier.calls.isEmpty)
+
+        // Second automatic attempt: inventory recovers. The failed first
+        // attempt must not have armed the cooldown; otherwise the second
+        // attempt would be blocked at the policy check.
+        inventory.errorToThrow = nil
+        await model.applySavedSetup(isAutomatic: true)
+
+        XCTAssertEqual(applier.calls.count, 1)
+        XCTAssertEqual(applier.lastAppliedProfile?.displayIdentity, external.identity)
+    }
 }
 
 @MainActor

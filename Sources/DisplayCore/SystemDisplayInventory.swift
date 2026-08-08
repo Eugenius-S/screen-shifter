@@ -60,9 +60,32 @@ private func displayModeDescriptor(for mode: CGDisplayMode) -> DisplayModeDescri
         pixelHeight: pixelHeight,
         logicalWidth: logicalWidth,
         logicalHeight: logicalHeight,
-        isHiDPI: pixelWidth > logicalWidth || pixelHeight > logicalHeight,
+        isHiDPI: DisplayModeClassification.isHiDPI(
+            pixelWidth: pixelWidth,
+            pixelHeight: pixelHeight,
+            logicalWidth: logicalWidth,
+            logicalHeight: logicalHeight
+        ),
         refreshRate: refreshRate
     )
+}
+
+/// Plan 001 step 4: HiDPI classification rules.
+public enum DisplayModeClassification {
+    /// A mode is HiDPI only when *both* pixel dimensions are greater than
+    /// their logical counterparts. The previous `||` classifier
+    /// misclassified stretched (non-HiDPI) modes where one axis scaled up
+    /// but the other stayed at 1:1. Splitting the rule out keeps the
+    /// `displayModeDescriptor` body small and makes the contract directly
+    /// testable without a CoreGraphics mock.
+    public static func isHiDPI(
+        pixelWidth: UInt32,
+        pixelHeight: UInt32,
+        logicalWidth: UInt32,
+        logicalHeight: UInt32
+    ) -> Bool {
+        pixelWidth > logicalWidth && pixelHeight > logicalHeight
+    }
 }
 
 /// Plan 001 step 3: round a finite CoreGraphics refresh rate to the

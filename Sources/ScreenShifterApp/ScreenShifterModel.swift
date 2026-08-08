@@ -356,7 +356,6 @@ final class ScreenShifterModel: ObservableObject {
             guard permission == .allowed else {
                 return
             }
-            cooldownUntil = Date().addingTimeInterval(3)
         }
 
         do {
@@ -364,10 +363,21 @@ final class ScreenShifterModel: ObservableObject {
             lastObservedTopology = DisplayTopology(displays: displays)
             updateSleepAssertion()
         } catch {
+            // Plan 001 step 4: a failed inventory read must not arm the
+            // automatic cooldown. Otherwise a single transient read error
+            // suppresses every subsequent automatic attempt for the next
+            // three seconds.
             let error: ModelError = .inventoryReadFailed
             errorMessage = error
             await record(level: .error, message: error.message)
             return
+        }
+
+        if isAutomatic {
+            // Plan 001 step 4: arm cooldown only after we know the
+            // inventory read succeeded. The early-return on inventory
+            // failure above leaves `cooldownUntil` untouched.
+            cooldownUntil = Date().addingTimeInterval(3)
         }
 
         let profilesByIdentity = Dictionary(
