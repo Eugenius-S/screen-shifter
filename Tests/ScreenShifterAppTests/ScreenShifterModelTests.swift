@@ -111,6 +111,7 @@ final class ScreenShifterModelTests: XCTestCase {
         let applier = FakeDisplayModeApplier()
         let model = makeModel(inventory: inventory, modeApplier: applier, profileStore: store)
 
+        await model.refresh()
         await model.applySavedSetup(isAutomatic: false)
 
         XCTAssertEqual(applier.calls.count, 1)
@@ -208,6 +209,7 @@ final class ScreenShifterModelTests: XCTestCase {
         applier.applyError = ApplyError()
         let model = makeModel(inventory: inventory, modeApplier: applier, profileStore: store)
 
+        await model.refresh()
         await model.applySavedSetup(isAutomatic: false)
 
         XCTAssertEqual(model.errorMessage, .applyFailed(displays: ["Ext"]))
@@ -272,10 +274,108 @@ final class ScreenShifterModelTests: XCTestCase {
         )
     }
 
+    func testConfirmResetRemovesProfileWhenDisplayDisconnected() async throws {
+        let inventory = FakeDisplayInventory()
+        let external = ConnectedDisplay(
+            displayID: 7,
+            identity: .external(vendorID: 1, productID: 2, serialNumber: 3, name: "Ext", physicalWidthMillimeters: 0, physicalHeightMillimeters: 0),
+            name: "Ext", isBuiltIn: false, currentMode: nil, availableModes: []
+        )
+        inventory.displaysToReturn = [external]
+        let profile = DisplayProfile(displayIdentity: external.identity, logicalWidth: 1920, logicalHeight: 1080, isHiDPI: false)
+        let store = InMemoryProfileStore()
+        await store.save(profile)
+        let applier = FakeDisplayModeApplier()
+        let model = makeModel(inventory: inventory, modeApplier: applier, profileStore: store)
+
+        await model.refresh()
+        model.prepareReset(for: external)
+
+        // Display disconnected between prepareReset and confirmReset.
+        inventory.displaysToReturn = []
+
+        await model.confirmReset()
+
+        let remaining = await store.profiles()
+        XCTAssertTrue(remaining.isEmpty)
+        // No reset call to the applier because the display is gone.
+        XCTAssertEqual(applier.calls, [])
+        XCTAssertTrue(
+            model.captureMessage?.contains("disconnected") ?? false,
+            "Expected disconnect-aware message, got \(model.captureMessage ?? "<nil>")"
+        )
+    }
+
+    func testConfirmResetSurfacesResetErrorWhenApplierThrows() async throws {
+        struct ResetError: Error {}
+        let inventory = FakeDisplayInventory()
+        let external = ConnectedDisplay(
+            displayID: 7,
+            identity: .external(vendorID: 1, productID: 2, serialNumber: 3, name: "Ext", physicalWidthMillimeters: 0, physicalHeightMillimeters: 0),
+            name: "Ext", isBuiltIn: false, currentMode: nil, availableModes: []
+        )
+        inventory.displaysToReturn = [external]
+        let profile = DisplayProfile(displayIdentity: external.identity, logicalWidth: 1920, logicalHeight: 1080, isHiDPI: false)
+        let store = InMemoryProfileStore()
+        await store.save(profile)
+        let applier = FakeDisplayModeApplier()
+        let model = makeModel(inventory: inventory, modeApplier: applier, profileStore: store)
+
+        await model.refresh()
+        model.prepareReset(for: external)
+
+        // Swap the applier to one that throws on reset without
+        // touching the rest of the model.
+        let throwingApplier = ThrowingResetApplier(error: ResetError())
+        let throwingModel = makeModel(
+            inventory: inventory,
+            modeApplier: throwingApplier,
+            profileStore: store
+        )
+        await throwingModel.refresh()
+        throwingModel.prepareReset(for: external)
+        await throwingModel.confirmReset()
+
+        // Profile is preserved when the reset fails.
+        let remaining = await store.profiles()
+        XCTAssertEqual(remaining.count, 1)
+        XCTAssertEqual(throwingModel.errorMessage, ModelError.resetFailed(display: "Ext"))
+    }
+
+    func testApplySavedSetupUsesCachedProfilesInsteadOfReReadingStore() async throws {
+        let inventory = FakeDisplayInventory()
+        let external = ConnectedDisplay(
+            displayID: 2,
+            identity: .external(vendorID: 1, productID: 2, serialNumber: 3, name: "Ext", physicalWidthMillimeters: 0, physicalHeightMillimeters: 0),
+            name: "Ext", isBuiltIn: false, currentMode: nil, availableModes: []
+        )
+        inventory.displaysToReturn = [external]
+        let cachedProfile = DisplayProfile(displayIdentity: external.identity, logicalWidth: 1920, logicalHeight: 1080, isHiDPI: false, refreshRate: 0)
+        let store = InMemoryProfileStore()
+        await store.save(cachedProfile)
+        let applier = FakeDisplayModeApplier()
+        let model = makeModel(inventory: inventory, modeApplier: applier, profileStore: store)
+
+        // Refresh populates the in-memory `savedProfiles` cache from the
+        // current store contents.
+        await model.refresh()
+
+        // Mutate the store directly without going through the model. The
+        // cache should still hold the original profile.
+        let newProfile = DisplayProfile(displayIdentity: external.identity, logicalWidth: 2560, logicalHeight: 1440, isHiDPI: true, refreshRate: 0)
+        await store.save(newProfile)
+
+        await model.applySavedSetup(isAutomatic: false)
+
+        XCTAssertEqual(applier.lastAppliedProfile?.logicalWidth, 1920)
+        XCTAssertEqual(applier.lastAppliedProfile?.logicalHeight, 1080)
+        XCTAssertEqual(applier.lastAppliedProfile?.isHiDPI, false)
+    }
+
     @MainActor
     private func makeModel(
         inventory: FakeDisplayInventory = FakeDisplayInventory(),
-        modeApplier: FakeDisplayModeApplier = FakeDisplayModeApplier(),
+        modeApplier: DisplayModeApplying = FakeDisplayModeApplier(),
         mainDisplayIDProvider: FakeMainDisplayIDProvider = FakeMainDisplayIDProvider(),
         profileStore: DisplayProfileStoring = InMemoryProfileStore(),
         logStore: LocalLogStore = LocalLogStore(),
@@ -311,5 +411,22 @@ private final class FakeUpdateChecker: UpdateChecking {
     func checkForUpdates() -> Bool {
         checkCallCount += 1
         return result
+    }
+}
+
+@MainActor
+private final class ThrowingResetApplier: DisplayModeApplying, @unchecked Sendable {
+    private let error: Error
+
+    init(error: Error) {
+        self.error = error
+    }
+
+    func apply(_ profile: DisplayProfile, to display: ConnectedDisplay) throws -> DisplayApplicationOutcome {
+        return .applied
+    }
+
+    func reset(_ display: ConnectedDisplay) throws {
+        throw error
     }
 }

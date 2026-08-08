@@ -23,10 +23,12 @@ final class FakeDisplayModeApplier: DisplayModeApplying, @unchecked Sendable {
     }
 
     private(set) var calls: [Call] = []
+    private(set) var lastAppliedProfile: DisplayProfile?
     var applyResult: DisplayApplicationOutcome = .alreadyApplied
     var applyError: Error?
 
     func apply(_ profile: DisplayProfile, to display: ConnectedDisplay) throws -> DisplayApplicationOutcome {
+        lastAppliedProfile = profile
         calls.append(Call(kind: .apply, displayID: display.displayID))
         if let applyError { throw applyError }
         return applyResult

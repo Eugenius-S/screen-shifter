@@ -91,8 +91,8 @@ public protocol MainDisplayIDProviding: Sendable {
 5. **`setActivationPolicy` removed.** `LSUIElement=true` in `Info.plist` is the source of truth.
 6. **Refresh rate in profile.** Persisted at capture; used as a tiebreaker in mode selection; falls back to current rate if the saved rate is unavailable.
 7. **Typed error model.** `ModelError` replaces `errorMessage: String?`; success paths clear the error before mutating state.
-8. **Sleep assertion lifecycle.** Created in `init` after the initial `refresh()` completes.
-9. **Reset path.** Re-read inventory before applying; remove the saved profile even if the display disconnected; show an explicit message describing the outcome.
+8. **Sleep assertion lifecycle.** Held optimistically in `init` if `keepExternalDisplayAwake` is already on, so the system cannot sleep between launch and the first `refresh()`. The first `refresh()` re-evaluates against the real inventory and releases the assertion if no external display is connected.
+9. **Reset path.** Re-read inventory before applying; if the target display is still connected, call `modeApplier.reset(_:)`; if the reset throws, surface `.resetFailed(display:)` and preserve the saved profile. Whether or not the reset ran, remove the saved profile; show a "display disconnected" message when no longer in the inventory, otherwise show the standard "Reset X to the system default." message.
 10. **Test strategy.** Fakes for `DisplayInventorying` / `DisplayModeApplying`; the two hardware-dependent tests are gated by `#if DEBUG && !CI`.
 11. **`applySavedSetup` profile lookup** uses the in-memory `savedProfiles`; no extra store read.
 12. **`CGMainDisplayID()`** is wrapped by `MainDisplayIDProviding`; the App layer never imports CoreGraphics directly.
@@ -101,8 +101,8 @@ public protocol MainDisplayIDProviding: Sendable {
 
 After the v2 work lands:
 
-1. `swift build` and `swift test` are green. The 24 existing tests still pass.
-2. At least 6 new model-level tests cover `refresh`, `completeCapture`, `applySavedSetup`, `setLaunchAtLogin`, `handleDisplayChangeNotification`, `confirmReset`, using fakes.
+1. `swift build` and `swift test` are green. The 24 original tests plus 8 DisplayCore model tests and at least 8 ScreenShifterApp model tests pass (39 total at the end of slice 6).
+2. New model-level tests cover `refresh`, `completeCapture`, `applySavedSetup`, `setLaunchAtLogin`, `handleDisplayChangeNotification`, `confirmReset`, plus the typed-error and cache / disconnect paths added in slices 5 and 6.
 3. The three P0 findings (Dock icon, HiDPI mode options, brief ↔ code sync) are fixed.
 4. All ten P1 findings are resolved.
 5. Hardware-dependent tests are gated and not part of the default `swift test` run.

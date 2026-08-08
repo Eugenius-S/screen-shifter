@@ -168,6 +168,13 @@ final class ScreenShifterModel: ObservableObject {
         keepExternalDisplayAwake = UserDefaults.standard.bool(forKey: "keepExternalDisplayAwake")
         launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
         registerAutomationObservers()
+        // P1-5: hold the sleep assertion immediately when keep-awake is on
+        // so the system cannot sleep between launch and the first refresh.
+        // The first refresh re-evaluates against the real inventory and
+        // releases the assertion if no external display is connected.
+        if keepExternalDisplayAwake {
+            _ = sleepAssertion.update(isEnabled: true)
+        }
     }
 
     deinit {
@@ -257,23 +264,36 @@ final class ScreenShifterModel: ObservableObject {
             return
         }
 
-        do {
-            try modeApplier.reset(display)
-            await profileStore.remove(for: display.identity)
-            savedProfiles = await profileStore.profiles()
-            captureStates[display.identity] = DisplayCaptureStateMachine.cancel(
-                from: captureState(for: display)
-            )
-            resetCandidate = nil
-            isResetConfirmationPresented = false
-            errorMessage = nil
-            captureMessage = "Reset \(display.name) to the system default."
-            await record(level: .info, message: captureMessage ?? "Reset display to the system default.")
-        } catch {
-            let error: ModelError = .resetFailed(display: display.name)
-            errorMessage = error
-            await record(level: .error, message: error.message)
+        // P1-6: re-validate the inventory before applying. If the display
+        // disconnected between the user clicking Reset and confirming, skip
+        // the applier call (there is nothing to reset) and still remove the
+        // saved profile so it does not haunt a future reconnect.
+        let currentDisplays = (try? inventory.connectedDisplays()) ?? []
+        let stillConnected = currentDisplays.contains { $0.identity == display.identity }
+
+        if stillConnected {
+            do {
+                try modeApplier.reset(display)
+            } catch {
+                let error: ModelError = .resetFailed(display: display.name)
+                errorMessage = error
+                await record(level: .error, message: error.message)
+                return
+            }
         }
+
+        await profileStore.remove(for: display.identity)
+        savedProfiles = await profileStore.profiles()
+        captureStates[display.identity] = DisplayCaptureStateMachine.cancel(
+            from: captureState(for: display)
+        )
+        resetCandidate = nil
+        isResetConfirmationPresented = false
+        errorMessage = nil
+        captureMessage = stillConnected
+            ? "Reset \(display.name) to the system default."
+            : "\(display.name) disconnected. Removed the saved profile; the system default is unchanged."
+        await record(level: .info, message: captureMessage ?? "Reset display to the system default.")
     }
 
     func applySavedSetup(isAutomatic: Bool = false) async {
@@ -302,7 +322,7 @@ final class ScreenShifterModel: ObservableObject {
         }
 
         let profilesByIdentity = Dictionary(
-            uniqueKeysWithValues: (await profileStore.profiles()).map {
+            uniqueKeysWithValues: savedProfiles.map {
                 ($0.displayIdentity, $0)
             }
         )
