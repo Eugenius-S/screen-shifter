@@ -18,6 +18,7 @@ struct AutomaticRunSummary: Equatable, Sendable {
 
 @MainActor
 protocol UpdateChecking {
+    var canCheckForUpdates: Bool { get }
     func checkForUpdates() -> Bool
 }
 
@@ -49,7 +50,16 @@ final class SparkleUpdaterDelegate: NSObject, SPUUpdaterDelegate {
     }
 
     func feedURLString(for updater: SPUUpdater) -> String? {
-        appcastURLString
+        // Plan 001 follow-up: in debug builds there is no published
+        // appcast.xml. Returning a feed URL makes Sparkle fetch it,
+        // receive 404, and surface a misleading "Update Error! The
+        // update is improperly signed" alert. Returning nil disables
+        // the check in debug; release builds keep the real feed URL.
+        #if DEBUG
+        return nil
+        #else
+        return appcastURLString
+        #endif
     }
 }
 
@@ -59,6 +69,10 @@ final class SparkleUpdateChecker: UpdateChecking {
 
     init(updater: SPUUpdater) {
         self.updater = updater
+    }
+
+    var canCheckForUpdates: Bool {
+        updater.canCheckForUpdates
     }
 
     func checkForUpdates() -> Bool {
@@ -165,6 +179,14 @@ final class ScreenShifterModel: ObservableObject {
     private let sleepAssertion = SystemSleepAssertionController()
     private let updateChecker: UpdateChecking
     let mainDisplayIDProvider: MainDisplayIDProviding
+
+    // Plan 001 follow-up: surfaces whether Sparkle is configured to
+    // check. The Settings view hides the Updates section when this is
+    // false so debug builds (no published feed) do not offer a button
+    // that does nothing or shows a misleading error.
+    var canCheckForUpdates: Bool {
+        updateChecker.canCheckForUpdates
+    }
 
     init(
         inventory: DisplayInventorying,
@@ -476,6 +498,14 @@ final class ScreenShifterModel: ObservableObject {
     }
 
     func checkForUpdates() {
+        // Plan 001 follow-up: when Sparkle is not configured (debug
+        // builds with no published feed, or the operator disabled
+        // updates), the click is a silent no-op. Showing
+        // `updateCheckFailed` here would be a misleading error — there
+        // is nothing to check, not a failure to surface.
+        guard updateChecker.canCheckForUpdates else {
+            return
+        }
         guard updateChecker.checkForUpdates() else {
             errorMessage = .updateCheckFailed
             return

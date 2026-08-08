@@ -74,13 +74,28 @@ final class ScreenShifterModelTests: XCTestCase {
     }
 
     func testCheckForUpdatesReportsFailureWhenUpdateCheckCannotStart() {
-        let checker = FakeUpdateChecker(result: false)
+        let checker = FakeUpdateChecker(result: false, canCheck: true)
         let model = makeModel(checker: checker)
 
         model.checkForUpdates()
 
         XCTAssertEqual(checker.checkCallCount, 1)
         XCTAssertEqual(model.errorMessage, .updateCheckFailed)
+    }
+
+    // Plan 001 follow-up: when Sparkle is not configured (debug builds
+    // with no published feed) the click is a silent no-op. The model
+    // must not surface `.updateCheckFailed` because there is nothing to
+    // check, not a failure to surface.
+    func testCheckForUpdatesIsSilentWhenCanCheckIsFalse() {
+        let checker = FakeUpdateChecker(result: true, canCheck: false)
+        let model = makeModel(checker: checker)
+
+        model.checkForUpdates()
+
+        XCTAssertEqual(checker.checkCallCount, 0)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNil(model.captureMessage)
     }
 
     func testRefreshPopulatesDisplaysFromInventory() async throws {
@@ -795,11 +810,15 @@ final class ScreenShifterModelTests: XCTestCase {
 @MainActor
 private final class FakeUpdateChecker: UpdateChecking {
     let result: Bool
+    let canCheck: Bool
     private(set) var checkCallCount = 0
 
-    init(result: Bool) {
+    init(result: Bool, canCheck: Bool = true) {
         self.result = result
+        self.canCheck = canCheck
     }
+
+    var canCheckForUpdates: Bool { canCheck }
 
     func checkForUpdates() -> Bool {
         checkCallCount += 1

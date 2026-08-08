@@ -212,9 +212,15 @@ private struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Updates") {
-                Button("Check for updates") {
-                    model.checkForUpdates()
+            // Plan 001 follow-up: hide the Updates section entirely when
+            // Sparkle is not configured. In debug builds there is no
+            // published feed; the section would just offer a button
+            // that silently does nothing.
+            if model.canCheckForUpdates {
+                Section("Updates") {
+                    Button("Check for updates") {
+                        model.checkForUpdates()
+                    }
                 }
             }
         }
