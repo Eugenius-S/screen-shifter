@@ -194,7 +194,12 @@ final class ScreenShifterModelTests: XCTestCase {
 
         inventory.displaysToReturn = [builtIn, external]
         model.handleDisplayChangeNotification()
-        try await Task.sleep(nanoseconds: 2_500_000_000)
+        // `makeModel` already passes `automationDelayNanoseconds: 0`, so
+        // the scheduler task does not sleep; awaiting its value is
+        // deterministic and faster than a real-time `Task.sleep`.
+        if let scheduled = model.scheduledAutomation {
+            await scheduled.value
+        }
 
         XCTAssertFalse(applier.calls.isEmpty)
         XCTAssertEqual(applier.calls.first?.displayID, 2)
