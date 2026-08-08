@@ -47,14 +47,24 @@ printf '%s\n' '<key>LSMinimumSystemVersion</key><string>14.0</string>' >> "$app_
 printf '%s\n' '<key>LSUIElement</key><true/>' >> "$app_path/Contents/Info.plist"
 printf '%s\n' '<key>NSHighResolutionCapable</key><true/>' >> "$app_path/Contents/Info.plist"
 printf '%s\n' "<key>SUFeedURL</key><string>$sparkle_feed_url</string>" >> "$app_path/Contents/Info.plist"
-printf '%s\n' '<key>SUEnableAutomaticChecks</key><true/>' >> "$app_path/Contents/Info.plist"
-printf '%s\n' '<key>SUAutomaticallyUpdate</key><true/>' >> "$app_path/Contents/Info.plist"
-printf '%s\n' '<key>SUAllowsAutomaticUpdates</key><true/>' >> "$app_path/Contents/Info.plist"
-printf '%s\n' '<key>SUScheduledCheckInterval</key><integer>86400</integer>' >> "$app_path/Contents/Info.plist"
-if test -n "$sparkle_public_ed_key"; then
-    printf '%s\n' "<key>SUPublicEDKey</key><string>$sparkle_public_ed_key</string>" >> "$app_path/Contents/Info.plist"
-    printf '%s\n' '<key>SUVerifyUpdateBeforeExtraction</key><true/>' >> "$app_path/Contents/Info.plist"
-    printf '%s\n' '<key>SURequireSignedFeed</key><true/>' >> "$app_path/Contents/Info.plist"
+if test -n "${CODESIGN_IDENTITY:-}"; then
+    printf '%s\n' '<key>SUEnableAutomaticChecks</key><true/>' >> "$app_path/Contents/Info.plist"
+    printf '%s\n' '<key>SUAutomaticallyUpdate</key><true/>' >> "$app_path/Contents/Info.plist"
+    printf '%s\n' '<key>SUAllowsAutomaticUpdates</key><true/>' >> "$app_path/Contents/Info.plist"
+    printf '%s\n' '<key>SUScheduledCheckInterval</key><integer>86400</integer>' >> "$app_path/Contents/Info.plist"
+    if test -n "$sparkle_public_ed_key"; then
+        printf '%s\n' "<key>SUPublicEDKey</key><string>$sparkle_public_ed_key</string>" >> "$app_path/Contents/Info.plist"
+        printf '%s\n' '<key>SUVerifyUpdateBeforeExtraction</key><true/>' >> "$app_path/Contents/Info.plist"
+        printf '%s\n' '<key>SURequireSignedFeed</key><true/>' >> "$app_path/Contents/Info.plist"
+    fi
+else
+    # Ad-hoc build: Sparkle signature validation cannot pass without a real
+    # signing identity and a matching public EdDSA key. Disable every
+    # auto-update path so the user does not see a "update is improperly
+    # signed" dialog on first launch.
+    printf '%s\n' '<key>SUEnableAutomaticChecks</key><false/>' >> "$app_path/Contents/Info.plist"
+    printf '%s\n' '<key>SUAutomaticallyUpdate</key><false/>' >> "$app_path/Contents/Info.plist"
+    printf '%s\n' '<key>SUAllowsAutomaticUpdates</key><false/>' >> "$app_path/Contents/Info.plist"
 fi
 printf '%s\n' '</dict></plist>' >> "$app_path/Contents/Info.plist"
 
