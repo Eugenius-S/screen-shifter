@@ -7,6 +7,15 @@ import ScreenShifterDomain
 import ServiceManagement
 import Sparkle
 
+/// Plan 001 step 5: brief summary of the last successful automatic apply,
+/// surfaced in the menu bar without a notification. The detailed log
+/// remains the source of truth; this is the concise status line the
+/// brief calls out.
+struct AutomaticRunSummary: Equatable, Sendable {
+    let timestamp: Date
+    let appliedCount: Int
+}
+
 @MainActor
 protocol UpdateChecking {
     func checkForUpdates() -> Bool
@@ -121,6 +130,7 @@ final class ScreenShifterModel: ObservableObject {
     @Published private(set) var captureStates: [DisplayIdentity: DisplayCaptureState] = [:]
     @Published private(set) var errorMessage: ModelError?
     @Published private(set) var captureMessage: String?
+    @Published private(set) var lastAutomaticRun: AutomaticRunSummary?
     @Published private(set) var logText = ""
     @Published var isResetConfirmationPresented = false
     @Published private(set) var resetCandidate: ConnectedDisplay?
@@ -413,6 +423,15 @@ final class ScreenShifterModel: ObservableObject {
             errorMessage = nil
             if !isAutomatic {
                 captureMessage = "Applied \(appliedCount) profile\(appliedCount == 1 ? "" : "s"); \(unchangedCount) already matched; \(unavailableCount) unavailable."
+            }
+            if isAutomatic {
+                // Plan 001 step 5: surface a quiet, non-notifying summary
+                // for the menu bar. The local log keeps the full history.
+                // A failure path leaves the previous summary intact.
+                lastAutomaticRun = AutomaticRunSummary(
+                    timestamp: Date(),
+                    appliedCount: appliedCount
+                )
             }
             await record(
                 level: .info,

@@ -699,6 +699,97 @@ final class ScreenShifterModelTests: XCTestCase {
         XCTAssertEqual(applier.calls.count, 1)
         XCTAssertEqual(applier.lastAppliedProfile?.displayIdentity, external.identity)
     }
+
+    // Plan 001 step 5: an automatic success sets the menu-bar summary;
+    // a manual success does not, so the two flows stay distinguishable
+    // in the UI copy.
+    func testAutomaticSuccessUpdatesLastAutomaticRun() async throws {
+        let inventory = FakeDisplayInventory()
+        let external = ConnectedDisplay(
+            displayID: 2,
+            identity: .external(
+                vendorID: 1,
+                productID: 2,
+                serialNumber: 3,
+                name: "Ext",
+                physicalWidthMillimeters: 0,
+                physicalHeightMillimeters: 0
+            ),
+            name: "Ext",
+            isBuiltIn: false,
+            currentMode: nil,
+            availableModes: []
+        )
+        inventory.displaysToReturn = [external]
+        let profile = DisplayProfile(
+            displayIdentity: external.identity,
+            logicalWidth: 1920,
+            logicalHeight: 1080,
+            isHiDPI: false
+        )
+        let store = InMemoryProfileStore()
+        await store.save(profile)
+        let applier = FakeDisplayModeApplier()
+        // The default `.alreadyApplied` would count the apply as
+        // unchanged; flip the fake so the summary sees a real `applied`.
+        applier.applyResult = .applied
+        let model = makeModel(
+            inventory: inventory,
+            modeApplier: applier,
+            profileStore: store
+        )
+
+        await model.bootstrap()
+        XCTAssertNil(model.lastAutomaticRun)
+
+        await model.applySavedSetup(isAutomatic: true)
+
+        XCTAssertNotNil(model.lastAutomaticRun)
+        XCTAssertEqual(model.lastAutomaticRun?.appliedCount, 1)
+    }
+
+    // Plan 001 step 5: a manual success must not touch the menu-bar
+    // summary, so the UI can show different copy for each flow.
+    func testManualSuccessLeavesLastAutomaticRunUnchanged() async throws {
+        let inventory = FakeDisplayInventory()
+        let external = ConnectedDisplay(
+            displayID: 2,
+            identity: .external(
+                vendorID: 1,
+                productID: 2,
+                serialNumber: 3,
+                name: "Ext",
+                physicalWidthMillimeters: 0,
+                physicalHeightMillimeters: 0
+            ),
+            name: "Ext",
+            isBuiltIn: false,
+            currentMode: nil,
+            availableModes: []
+        )
+        inventory.displaysToReturn = [external]
+        let profile = DisplayProfile(
+            displayIdentity: external.identity,
+            logicalWidth: 1920,
+            logicalHeight: 1080,
+            isHiDPI: false
+        )
+        let store = InMemoryProfileStore()
+        await store.save(profile)
+        let applier = FakeDisplayModeApplier()
+        let model = makeModel(
+            inventory: inventory,
+            modeApplier: applier,
+            profileStore: store
+        )
+
+        await model.bootstrap()
+        XCTAssertNil(model.lastAutomaticRun)
+
+        await model.applySavedSetup(isAutomatic: false)
+
+        XCTAssertNil(model.lastAutomaticRun)
+    }
 }
 
 @MainActor

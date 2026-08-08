@@ -51,6 +51,19 @@ private struct MenuBarContent: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
+        if let summary = model.lastAutomaticRun {
+            // Plan 001 step 5: a concise, non-notifying status derived
+            // from the last successful automatic run. No alerts, no
+            // dashboards, no custom styling — the log is the detailed
+            // history. The timestamp updates on each automatic success.
+            Text(
+                "Automation active · \(summary.appliedCount) at \(summary.timestamp.formatted(date: .omitted, time: .shortened))"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            Divider()
+        }
+
         Button {
             openSettings()
         } label: {
