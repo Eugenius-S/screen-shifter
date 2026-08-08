@@ -50,7 +50,10 @@ private func displayModeDescriptor(for mode: CGDisplayMode) -> DisplayModeDescri
     let logicalHeight = UInt32(mode.height)
     let pixelWidth = UInt32(mode.pixelWidth)
     let pixelHeight = UInt32(mode.pixelHeight)
-    let refreshRate = mode.refreshRate
+    // Plan 001 step 3: canonicalize the rate to 0.01 Hz so floating-point
+    // artefacts in CoreGraphics do not break the equality check used by
+    // `SystemDisplayModeApplier.apply`.
+    let refreshRate = RefreshRateCanonicalization.canonicalize(mode.refreshRate)
 
     return DisplayModeDescriptor(
         pixelWidth: pixelWidth,
@@ -62,33 +65,112 @@ private func displayModeDescriptor(for mode: CGDisplayMode) -> DisplayModeDescri
     )
 }
 
+/// Plan 001 step 3: round a finite CoreGraphics refresh rate to the
+/// nearest 0.01 Hz. Floating-point noise in the source value would
+/// otherwise break equality between a freshly captured descriptor and a
+/// previously persisted profile. 0 and non-finite values are returned
+/// unchanged: 0 is the legacy "any rate" sentinel used by profiles that
+/// pre-date the refresh-rate field, and non-finite values must never
+/// compare equal to anything sensible.
+public enum RefreshRateCanonicalization {
+    public static func canonicalize(_ rate: Double) -> Double {
+        guard rate.isFinite, rate > 0 else {
+            return rate
+        }
+        return (rate * 100).rounded() / 100
+    }
+}
+
 public enum ProfileModeSelector {
     public static func matchingMode(
         for profile: DisplayProfile,
         availableModes: [DisplayModeDescriptor],
+        currentMode: DisplayModeDescriptor?,
         requiresMaximumPhysicalResolution: Bool
     ) -> DisplayModeDescriptor? {
-        let matchingModes = availableModes.filter { mode in
-            mode.logicalWidth == profile.logicalWidth
-                && mode.logicalHeight == profile.logicalHeight
-                && mode.isHiDPI == profile.isHiDPI
-                && (profile.refreshRate == 0 || mode.refreshRate == profile.refreshRate)
+        // Plan 001 step 3: canonicalize the saved rate here so profiles
+        // persisted before the field existed, or with floating-point
+        // noise from a previous capture, still match cleanly.
+        let savedCanonicalRate = RefreshRateCanonicalization.canonicalize(profile.refreshRate)
+        let acceptsAnyRate = savedCanonicalRate == 0
+
+        // First pass: size + HiDPI + saved rate. The legacy 0 sentinel
+        // skips the rate check entirely.
+        let exactMatches = availableModes.filter { mode in
+            matchesSizeAndHiDPI(mode, profile)
+                && (acceptsAnyRate
+                    || RefreshRateCanonicalization.canonicalize(mode.refreshRate) == savedCanonicalRate)
         }
 
-        guard requiresMaximumPhysicalResolution else {
-            return matchingModes.first
+        let chosenPool: [DisplayModeDescriptor]
+        if exactMatches.isEmpty {
+            chosenPool = fallbackCandidates(
+                profile: profile,
+                availableModes: availableModes,
+                currentMode: currentMode
+            )
+        } else {
+            chosenPool = exactMatches
         }
 
-        return matchingModes.max { leftMode, rightMode in
-            let leftArea = UInt64(leftMode.pixelWidth) * UInt64(leftMode.pixelHeight)
-            let rightArea = UInt64(rightMode.pixelWidth) * UInt64(rightMode.pixelHeight)
+        guard !chosenPool.isEmpty else {
+            return nil
+        }
 
-            if leftArea == rightArea {
-                return leftMode.pixelWidth < rightMode.pixelWidth
+        if requiresMaximumPhysicalResolution {
+            return chosenPool.max { leftMode, rightMode in
+                let leftArea = UInt64(leftMode.pixelWidth) * UInt64(leftMode.pixelHeight)
+                let rightArea = UInt64(rightMode.pixelWidth) * UInt64(rightMode.pixelHeight)
+                if leftArea == rightArea {
+                    return leftMode.pixelWidth < rightMode.pixelWidth
+                }
+                return leftArea < rightArea
             }
-
-            return leftArea < rightArea
         }
+
+        return chosenPool.first
+    }
+
+    private static func matchesSizeAndHiDPI(
+        _ mode: DisplayModeDescriptor,
+        _ profile: DisplayProfile
+    ) -> Bool {
+        mode.logicalWidth == profile.logicalWidth
+            && mode.logicalHeight == profile.logicalHeight
+            && mode.isHiDPI == profile.isHiDPI
+    }
+
+    /// Plan 001 step 3: when no candidate matches the saved rate, fall
+    /// back to size+HiDPI candidates and prefer the one whose canonical
+    /// rate matches the current display rate. Without a current mode, or
+    /// when no candidate shares the current rate, return the whole
+    /// compatible set so the caller can pick `first` or the
+    /// max-resolution mode.
+    private static func fallbackCandidates(
+        profile: DisplayProfile,
+        availableModes: [DisplayModeDescriptor],
+        currentMode: DisplayModeDescriptor?
+    ) -> [DisplayModeDescriptor] {
+        let compatible = availableModes.filter { mode in
+            matchesSizeAndHiDPI(mode, profile)
+        }
+        guard !compatible.isEmpty else {
+            return []
+        }
+
+        guard let currentMode else {
+            return compatible
+        }
+
+        let currentCanonicalRate = RefreshRateCanonicalization.canonicalize(currentMode.refreshRate)
+        guard currentCanonicalRate > 0 else {
+            return compatible
+        }
+
+        let rateMatches = compatible.filter { mode in
+            RefreshRateCanonicalization.canonicalize(mode.refreshRate) == currentCanonicalRate
+        }
+        return rateMatches.isEmpty ? compatible : rateMatches
     }
 }
 
@@ -171,6 +253,7 @@ public enum DisplayApplicationPlanner {
         guard let desiredMode = ProfileModeSelector.matchingMode(
             for: profile,
             availableModes: display.availableModes,
+            currentMode: display.currentMode,
             requiresMaximumPhysicalResolution: !display.isBuiltIn
         ) else {
             return .unavailable
