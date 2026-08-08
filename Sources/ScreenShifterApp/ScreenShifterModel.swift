@@ -119,11 +119,9 @@ final class ScreenShifterModel: ObservableObject {
     @Published private(set) var displays: [ConnectedDisplay] = []
     @Published private(set) var savedProfiles: [DisplayProfile] = []
     @Published private(set) var captureStates: [DisplayIdentity: DisplayCaptureState] = [:]
-    @Published private(set) var captureCandidates: [DisplayProfile] = []
     @Published private(set) var errorMessage: String?
     @Published private(set) var captureMessage: String?
     @Published private(set) var logText = ""
-    @Published var isCaptureConfirmationPresented = false
     @Published var isResetConfirmationPresented = false
     @Published private(set) var resetCandidate: ConnectedDisplay?
     @Published private(set) var launchAtLoginEnabled: Bool
@@ -191,15 +189,9 @@ final class ScreenShifterModel: ObservableObject {
     }
 
     func prepareCapture() {
-        captureCandidates = ProfileCapturePlanner.profiles(for: displays)
-
-        guard !captureCandidates.isEmpty else {
-            errorMessage = "No display modes are available to capture."
-            return
-        }
-
-        captureMessage = nil
-        isCaptureConfirmationPresented = true
+        // Per-display capture only; the bulk "save all" flow was removed in
+        // slice 4 (P1-2 dead code). The Settings UI now drives the per-display
+        // capture state machine via DisplayCaptureSection.
     }
 
     func captureState(for display: ConnectedDisplay) -> DisplayCaptureState {
@@ -245,16 +237,8 @@ final class ScreenShifterModel: ObservableObject {
     }
 
     func confirmCapture() async {
-        let profiles = captureCandidates
-
-        for profile in profiles {
-            await profileStore.save(profile)
-        }
-
-        savedProfiles = await profileStore.profiles()
-        captureCandidates = []
-        captureMessage = "Saved \(profiles.count) display profile\(profiles.count == 1 ? "" : "s")."
-        await record(level: .info, message: captureMessage ?? "Saved display profiles.")
+        // Bulk capture flow removed in slice 4 (P1-2 dead code). Per-display
+        // capture is now the only path, driven by DisplayCaptureSection.
     }
 
     func prepareReset(for display: ConnectedDisplay) {

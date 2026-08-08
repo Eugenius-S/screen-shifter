@@ -1,5 +1,4 @@
 import AppKit
-import CoreGraphics
 import DisplayCore
 import Sparkle
 import SwiftUI
@@ -40,41 +39,13 @@ struct ScreenShifterApp: App {
     }
 }
 
-@MainActor
-private final class SettingsWindowController {
-    static let shared = SettingsWindowController()
-
-    private var window: NSWindow?
-
-    func show(model: ScreenShifterModel) {
-        if let window {
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            return
-        }
-
-        let hostingController = NSHostingController(rootView: SettingsView(model: model))
-        let window = NSWindow(contentViewController: hostingController)
-        window.title = "Screen Shifter Settings"
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(NSSize(width: 420, height: 600))
-        window.isReleasedWhenClosed = false
-        window.hidesOnDeactivate = false
-        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        window.center()
-        self.window = window
-
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-    }
-}
-
 private struct MenuBarContent: View {
     @ObservedObject var model: ScreenShifterModel
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Button {
-            SettingsWindowController.shared.show(model: model)
+            openSettings()
         } label: {
             Label("Settings...", systemImage: "gearshape")
         }
@@ -83,26 +54,6 @@ private struct MenuBarContent: View {
         }
         .task {
             await model.refresh()
-        }
-        .alert("Save Current Display Profiles", isPresented: $model.isCaptureConfirmationPresented) {
-            Button("Cancel", role: .cancel) {}
-            Button("Save") {
-                Task {
-                    await model.confirmCapture()
-                }
-            }
-        } message: {
-            Text("This will replace saved profiles for \(model.captureCandidates.count) connected display\(model.captureCandidates.count == 1 ? "" : "s").")
-        }
-        .alert("Reset Display to Default", isPresented: $model.isResetConfirmationPresented) {
-            Button("Cancel", role: .cancel) {}
-            Button("Reset", role: .destructive) {
-                Task {
-                    await model.confirmReset()
-                }
-            }
-        } message: {
-            Text("This removes the saved profile for \(model.resetCandidate?.name ?? "this display") and restores the system default scaling.")
         }
     }
 }
