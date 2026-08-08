@@ -8,7 +8,7 @@ condition, and update this index when finished.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |---|---|---|---|---|---|
-| 001 | Make automatic restoration reliable and release-ready | P1 | L | none | TODO |
+| 001 | Make automatic restoration reliable and release-ready | P1 | L | none | BLOCKED (steps 1–5 done; step 6 external display verification pending) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 | REJECTED (with one-line rationale).
