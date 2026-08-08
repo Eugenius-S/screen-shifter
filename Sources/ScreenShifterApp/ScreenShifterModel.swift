@@ -139,9 +139,10 @@ final class ScreenShifterModel: ObservableObject {
         }
     }
 
-    private let inventory = SystemDisplayInventory()
-    private let profileStore = UserDefaultsProfileStore()
-    private let logStore = LocalLogStore()
+    private let inventory: DisplayInventorying
+    private let modeApplier: DisplayModeApplying
+    private let profileStore: DisplayProfileStoring
+    private let logStore: LocalLogStore
     private var notificationTokens: [NSObjectProtocol] = []
     private var scheduledAutomation: Task<Void, Never>?
     private var cooldownUntil: Date?
@@ -149,12 +150,25 @@ final class ScreenShifterModel: ObservableObject {
     private var lastObservedTopology: DisplayTopology?
     private let sleepAssertion = SystemSleepAssertionController()
     private let updateChecker: UpdateChecking
+    let mainDisplayIDProvider: MainDisplayIDProviding
 
-    init(updateChecker: UpdateChecking) {
+    init(
+        inventory: DisplayInventorying,
+        modeApplier: DisplayModeApplying,
+        mainDisplayIDProvider: MainDisplayIDProviding,
+        profileStore: DisplayProfileStoring = UserDefaultsProfileStore(),
+        logStore: LocalLogStore = LocalLogStore(),
+        updateChecker: UpdateChecking
+    ) {
+        self.inventory = inventory
+        self.modeApplier = modeApplier
+        self.mainDisplayIDProvider = mainDisplayIDProvider
+        self.profileStore = profileStore
+        self.logStore = logStore
+        self.updateChecker = updateChecker
         automationPaused = UserDefaults.standard.bool(forKey: "automationPaused")
         keepExternalDisplayAwake = UserDefaults.standard.bool(forKey: "keepExternalDisplayAwake")
         launchAtLoginEnabled = SMAppService.mainApp.status == .enabled
-        self.updateChecker = updateChecker
         registerAutomationObservers()
     }
 
@@ -258,7 +272,7 @@ final class ScreenShifterModel: ObservableObject {
         }
 
         do {
-            try SystemDisplayModeApplier().reset(display)
+            try modeApplier.reset(display)
             await profileStore.remove(for: display.identity)
             savedProfiles = await profileStore.profiles()
             captureStates[display.identity] = DisplayCaptureStateMachine.cancel(
@@ -314,7 +328,7 @@ final class ScreenShifterModel: ObservableObject {
             }
 
             do {
-                switch try SystemDisplayModeApplier().apply(profile, to: display) {
+                switch try modeApplier.apply(profile, to: display) {
                 case .applied:
                     appliedCount += 1
                 case .alreadyApplied:
@@ -462,7 +476,7 @@ final class ScreenShifterModel: ObservableObject {
         }
     }
 
-    private func handleDisplayChangeNotification() {
+    func handleDisplayChangeNotification() {
         guard let currentDisplays = try? inventory.connectedDisplays() else {
             return
         }

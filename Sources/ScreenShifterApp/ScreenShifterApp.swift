@@ -21,6 +21,9 @@ struct ScreenShifterApp: App {
         self.updaterDelegate = updaterDelegate
         _model = StateObject(
             wrappedValue: ScreenShifterModel(
+                inventory: SystemDisplayInventory(),
+                modeApplier: SystemDisplayModeApplier(),
+                mainDisplayIDProvider: SystemMainDisplayIDProvider(),
                 updateChecker: SparkleUpdateChecker(updater: updaterController.updater)
             )
         )
@@ -112,7 +115,7 @@ private struct SettingsView: View {
     var body: some View {
         let builtInDisplay = model.displays.first { $0.isBuiltIn }
         let externalDisplays = model.displays.filter { !$0.isBuiltIn }
-        let activeDisplayID = CGMainDisplayID()
+        let activeDisplayID = model.mainDisplayIDProvider.mainDisplayID
         let selectedExternalDisplay = externalDisplays.first {
             $0.displayID == selectedExternalDisplayID
         } ?? externalDisplays.first
@@ -284,7 +287,7 @@ private struct SettingsView: View {
             return
         }
 
-        let activeDisplayID = CGMainDisplayID()
+        let activeDisplayID = model.mainDisplayIDProvider.mainDisplayID
         if availableDisplays.contains(where: { $0.displayID == activeDisplayID }) {
             expandedDisplayID = activeDisplayID
         } else {

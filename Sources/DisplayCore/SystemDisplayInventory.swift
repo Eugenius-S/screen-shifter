@@ -252,7 +252,7 @@ public enum DisplayModeApplicationError: Error, Equatable, Sendable {
 }
 
 @MainActor
-public struct SystemDisplayModeApplier {
+public struct SystemDisplayModeApplier: DisplayModeApplying {
     public init() {}
 
     public func reset(_ display: ConnectedDisplay) throws {
@@ -293,7 +293,7 @@ public enum DisplayInventoryError: Error, Equatable, Sendable {
 }
 
 @MainActor
-public struct SystemDisplayInventory {
+public struct SystemDisplayInventory: DisplayInventorying {
     public init() {}
 
     public func connectedDisplays() throws -> [ConnectedDisplay] {
@@ -348,4 +348,12 @@ public struct SystemDisplayInventory {
         return serialNumber == 0 ? nil : serialNumber
     }
 
+}
+
+public struct SystemMainDisplayIDProvider: MainDisplayIDProviding, @unchecked Sendable {
+    public init() {}
+
+    public var mainDisplayID: CGDirectDisplayID {
+        CGMainDisplayID()
+    }
 }

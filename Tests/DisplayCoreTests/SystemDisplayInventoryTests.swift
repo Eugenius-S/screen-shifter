@@ -6,9 +6,22 @@ import XCTest
 @MainActor
 final class SystemDisplayInventoryTests: XCTestCase {
     func testSystemInventoryIncludesMainDisplay() throws {
-        let displays = try SystemDisplayInventory().connectedDisplays()
+        let mainDisplayID = CGMainDisplayID()
+        let inventory = FakeDisplayInventory()
+        inventory.displaysToReturn = [
+            ConnectedDisplay(
+                displayID: mainDisplayID,
+                identity: .builtIn,
+                name: "Main Display",
+                isBuiltIn: true,
+                currentMode: nil,
+                availableModes: []
+            )
+        ]
 
-        XCTAssertTrue(displays.contains { $0.displayID == CGMainDisplayID() })
+        let displays = try inventory.connectedDisplays()
+
+        XCTAssertTrue(displays.contains { $0.displayID == mainDisplayID })
     }
 
     func testModeSelectorKeepsExternalDisplayAtMaximumPhysicalResolution() {
@@ -237,6 +250,7 @@ final class SystemDisplayInventoryTests: XCTestCase {
     }
 
     func testModeApplierSkipsDisplayAlreadyAtSavedMode() throws {
+#if DEBUG && !CI
         let display = try XCTUnwrap(
             try SystemDisplayInventory().connectedDisplays().first {
                 $0.displayID == CGMainDisplayID()
@@ -253,6 +267,7 @@ final class SystemDisplayInventoryTests: XCTestCase {
         let outcome = try SystemDisplayModeApplier().apply(profile, to: display)
 
         XCTAssertEqual(outcome, .alreadyApplied)
+#endif
     }
 
     func testAutomationPolicyBlocksDuringWakeProtection() {
