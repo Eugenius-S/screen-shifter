@@ -34,17 +34,33 @@ public struct DisplayProfile: Codable, Equatable, Sendable {
 	public let logicalWidth: UInt32
 	public let logicalHeight: UInt32
 	public let isHiDPI: Bool
+	public let refreshRate: Double
 
 	public init(
 		displayIdentity: DisplayIdentity,
 		logicalWidth: UInt32,
 		logicalHeight: UInt32,
-		isHiDPI: Bool
+		isHiDPI: Bool,
+		refreshRate: Double = 0
 	) {
 		self.displayIdentity = displayIdentity
 		self.logicalWidth = logicalWidth
 		self.logicalHeight = logicalHeight
 		self.isHiDPI = isHiDPI
+		self.refreshRate = refreshRate
+	}
+
+	private enum CodingKeys: String, CodingKey {
+		case displayIdentity, logicalWidth, logicalHeight, isHiDPI, refreshRate
+	}
+
+	public init(from decoder: Decoder) throws {
+		let container = try decoder.container(keyedBy: CodingKeys.self)
+		displayIdentity = try container.decode(DisplayIdentity.self, forKey: .displayIdentity)
+		logicalWidth = try container.decode(UInt32.self, forKey: .logicalWidth)
+		logicalHeight = try container.decode(UInt32.self, forKey: .logicalHeight)
+		isHiDPI = try container.decode(Bool.self, forKey: .isHiDPI)
+		refreshRate = try container.decodeIfPresent(Double.self, forKey: .refreshRate) ?? 0
 	}
 }
 

@@ -419,4 +419,44 @@ final class SystemDisplayInventoryTests: XCTestCase {
         XCTAssertEqual(cancelled, .idle)
         XCTAssertFalse(cancelled.canComplete)
     }
+
+    func testModeSelectorMatchesByRefreshRateWhenSpecified() {
+        let profile = DisplayProfile(
+            displayIdentity: .builtIn,
+            logicalWidth: 1920,
+            logicalHeight: 1080,
+            isHiDPI: true,
+            refreshRate: 120
+        )
+        let modeAt60 = DisplayModeDescriptor(pixelWidth: 3840, pixelHeight: 2160, logicalWidth: 1920, logicalHeight: 1080, isHiDPI: true, refreshRate: 60)
+        let modeAt120 = DisplayModeDescriptor(pixelWidth: 3840, pixelHeight: 2160, logicalWidth: 1920, logicalHeight: 1080, isHiDPI: true, refreshRate: 120)
+
+        let selected = ProfileModeSelector.matchingMode(
+            for: profile,
+            availableModes: [modeAt60, modeAt120],
+            requiresMaximumPhysicalResolution: false
+        )
+
+        XCTAssertEqual(selected, modeAt120)
+    }
+
+    func testModeSelectorAcceptsAnyRefreshRateWhenProfileRateIsZero() {
+        let profile = DisplayProfile(
+            displayIdentity: .builtIn,
+            logicalWidth: 1920,
+            logicalHeight: 1080,
+            isHiDPI: true,
+            refreshRate: 0
+        )
+        let modeAt60 = DisplayModeDescriptor(pixelWidth: 3840, pixelHeight: 2160, logicalWidth: 1920, logicalHeight: 1080, isHiDPI: true, refreshRate: 60)
+        let modeAt120 = DisplayModeDescriptor(pixelWidth: 3840, pixelHeight: 2160, logicalWidth: 1920, logicalHeight: 1080, isHiDPI: true, refreshRate: 120)
+
+        let selectedAtFirst = ProfileModeSelector.matchingMode(
+            for: profile,
+            availableModes: [modeAt60, modeAt120],
+            requiresMaximumPhysicalResolution: false
+        )
+
+        XCTAssertEqual(selectedAtFirst, modeAt60)
+    }
 }

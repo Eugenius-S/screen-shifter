@@ -17,19 +17,22 @@ public struct DisplayModeDescriptor: Codable, Equatable, Sendable {
     public let logicalWidth: UInt32
     public let logicalHeight: UInt32
     public let isHiDPI: Bool
+    public let refreshRate: Double
 
     public init(
         pixelWidth: UInt32,
         pixelHeight: UInt32,
         logicalWidth: UInt32,
         logicalHeight: UInt32,
-        isHiDPI: Bool
+        isHiDPI: Bool,
+        refreshRate: Double = 0
     ) {
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
         self.logicalWidth = logicalWidth
         self.logicalHeight = logicalHeight
         self.isHiDPI = isHiDPI
+        self.refreshRate = refreshRate
     }
 }
 
@@ -47,13 +50,15 @@ private func displayModeDescriptor(for mode: CGDisplayMode) -> DisplayModeDescri
     let logicalHeight = UInt32(mode.height)
     let pixelWidth = UInt32(mode.pixelWidth)
     let pixelHeight = UInt32(mode.pixelHeight)
+    let refreshRate = mode.refreshRate
 
     return DisplayModeDescriptor(
         pixelWidth: pixelWidth,
         pixelHeight: pixelHeight,
         logicalWidth: logicalWidth,
         logicalHeight: logicalHeight,
-        isHiDPI: pixelWidth > logicalWidth || pixelHeight > logicalHeight
+        isHiDPI: pixelWidth > logicalWidth || pixelHeight > logicalHeight,
+        refreshRate: refreshRate
     )
 }
 
@@ -67,6 +72,7 @@ public enum ProfileModeSelector {
             mode.logicalWidth == profile.logicalWidth
                 && mode.logicalHeight == profile.logicalHeight
                 && mode.isHiDPI == profile.isHiDPI
+                && (profile.refreshRate == 0 || mode.refreshRate == profile.refreshRate)
         }
 
         guard requiresMaximumPhysicalResolution else {
@@ -97,7 +103,8 @@ public enum ProfileCapturePlanner {
                 displayIdentity: display.identity,
                 logicalWidth: currentMode.logicalWidth,
                 logicalHeight: currentMode.logicalHeight,
-                isHiDPI: currentMode.isHiDPI
+                isHiDPI: currentMode.isHiDPI,
+                refreshRate: currentMode.refreshRate
             )
         }
     }
