@@ -316,15 +316,29 @@ public struct SystemDisplayInventory: DisplayInventorying {
             throw DisplayInventoryError.activeDisplayListUnavailable(listResult.rawValue)
         }
 
-        return displayIDs.prefix(Int(displayCount)).map(snapshot(for:))
+        // P2-11: build the screen map once so the per-display lookup in
+        // `snapshot(for:)` is O(1) instead of O(N × M).
+        let screenByID = screenMap()
+
+        return displayIDs.prefix(Int(displayCount)).map {
+            snapshot(for: $0, screenByID: screenByID)
+        }
     }
 
-    private func snapshot(for displayID: CGDirectDisplayID) -> ConnectedDisplay {
+    private func screenMap() -> [CGDirectDisplayID: NSScreen] {
+        let key = NSDeviceDescriptionKey("NSScreenNumber")
+        return Dictionary(uniqueKeysWithValues: NSScreen.screens.compactMap { screen in
+            guard let number = (screen.deviceDescription[key] as? NSNumber)?.uint32Value else {
+                return nil
+            }
+            return (number, screen)
+        })
+    }
+
+    private func snapshot(for displayID: CGDirectDisplayID, screenByID: [CGDirectDisplayID: NSScreen]) -> ConnectedDisplay {
         let isBuiltIn = CGDisplayIsBuiltin(displayID) != 0
         let displaySize = CGDisplayScreenSize(displayID)
-        let screen = NSScreen.screens.first { screen in
-            (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == displayID
-        }
+        let screen = screenByID[displayID]
         let displayName = screen?.localizedName ?? "Display \(displayID)"
         let identity = isBuiltIn
             ? .builtIn

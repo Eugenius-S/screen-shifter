@@ -111,8 +111,14 @@ public actor UserDefaultsProfileStore: DisplayProfileStoring {
 		var profiles = decodedProfiles()
 		profiles[profile.displayIdentity.storageKey] = profile
 
-		if let encodedProfiles = try? JSONEncoder().encode(profiles) {
+		do {
+			let encodedProfiles = try JSONEncoder().encode(profiles)
 			defaults.set(encodedProfiles, forKey: storageKey)
+		} catch {
+			// P2-9: surface encode errors instead of silently dropping
+			// the write. Without this a corrupt in-memory profile would
+			// look like a successful save.
+			logProfileStoreError(operation: "encode", error: error)
 		}
 	}
 
@@ -120,8 +126,11 @@ public actor UserDefaultsProfileStore: DisplayProfileStoring {
 		var profiles = decodedProfiles()
 		profiles.removeValue(forKey: identity.storageKey)
 
-		if let encodedProfiles = try? JSONEncoder().encode(profiles) {
+		do {
+			let encodedProfiles = try JSONEncoder().encode(profiles)
 			defaults.set(encodedProfiles, forKey: storageKey)
+		} catch {
+			logProfileStoreError(operation: "encode", error: error)
 		}
 	}
 
@@ -140,7 +149,19 @@ public actor UserDefaultsProfileStore: DisplayProfileStoring {
 			return [:]
 		}
 
-		return (try? JSONDecoder().decode([String: DisplayProfile].self, from: encodedProfiles)) ?? [:]
+		do {
+			return try JSONDecoder().decode([String: DisplayProfile].self, from: encodedProfiles)
+		} catch {
+			// P2-9: surface decode errors so silent profile-store
+			// corruption does not look like a clean start.
+			logProfileStoreError(operation: "decode", error: error)
+			return [:]
+		}
+	}
+
+	private nonisolated func logProfileStoreError(operation: String, error: Error) {
+		let message = "UserDefaultsProfileStore: profile \(operation) failed: \(error)\n"
+		FileHandle.standardError.write(Data(message.utf8))
 	}
 }
 
@@ -150,6 +171,20 @@ public enum LogLevel: String, Codable, Sendable {
 }
 
 public actor LocalLogStore {
+	/// P2-8: cap the on-disk log so it cannot grow without bound. When the
+	/// existing file is larger than this, `append(_:)` rotates it before
+	/// writing the new line. 1 MiB is a reasonable upper bound for a
+	/// menu-bar utility that logs user-facing events.
+	public static let maxLogBytes: UInt64 = 1_048_576
+
+	// P2-2: share a single ISO-8601 formatter across all appends; it is
+	// expensive to build and the format never changes. NSFormatter is
+	// safe to use from multiple threads for read-only formatting.
+	private nonisolated(unsafe) static let iso8601: ISO8601DateFormatter = {
+		let formatter = ISO8601DateFormatter()
+		return formatter
+	}()
+
 	public static var defaultFileURL: URL {
 		FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
 			.appendingPathComponent("Application Support", isDirectory: true)
@@ -158,9 +193,14 @@ public actor LocalLogStore {
 	}
 
 	private let fileURL: URL
+	private let maxLogBytes: UInt64
 
-	public init(fileURL: URL = LocalLogStore.defaultFileURL) {
+	public init(
+		fileURL: URL = LocalLogStore.defaultFileURL,
+		maxLogBytes: UInt64 = LocalLogStore.maxLogBytes
+	) {
 		self.fileURL = fileURL
+		self.maxLogBytes = maxLogBytes
 	}
 
 	public func append(level: LogLevel, message: String, date: Date = Date()) throws {
@@ -170,15 +210,26 @@ public actor LocalLogStore {
 			withIntermediateDirectories: true
 		)
 
-		let formatter = ISO8601DateFormatter()
-		let line = "\(formatter.string(from: date)) \(level.rawValue) \(message)\n"
+		// P2-8: rotate the file when it has grown past the cap. The simplest
+		// viable policy: drop the existing file before writing the new line
+		// when the on-disk size is over the cap. We accept losing the old
+		// entries in exchange for a bounded, predictable log.
+		if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+		   let size = attributes[.size] as? UInt64,
+		   size > maxLogBytes {
+			try FileManager.default.removeItem(at: fileURL)
+		}
+
+		let line = "\(Self.iso8601.string(from: date)) \(level.rawValue) \(message)\n"
 		let data = Data(line.utf8)
 
 		if FileManager.default.fileExists(atPath: fileURL.path) {
 			let handle = try FileHandle(forWritingTo: fileURL)
+			// P2-1: guarantee the handle is closed even if write throws,
+			// so a partial append does not leak the file descriptor.
+			defer { try? handle.close() }
 			try handle.seekToEnd()
 			try handle.write(contentsOf: data)
-			try handle.close()
 		} else {
 			try data.write(to: fileURL, options: .atomic)
 		}
