@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-07",
+  "title": "Design System: Screen Shifter",
+  "extensions": {
+    "colorMeta": {},
+    "typographyMeta": {
+      "body": {
+        "displayName": "System UI",
+        "purpose": "Native macOS labels, controls, and supporting settings copy."
+      },
+      "label-mono": {
+        "displayName": "System Monospaced",
+        "purpose": "Local log content only."
+      }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": []
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "The Connection Dispatcher",
+    "overview": "Screen Shifter is a background macOS utility, not a destination app. Its interface should feel like a dependable dispatcher: show the current display state, expose the next safe action, and then get out of the way. The visual system is intentionally platform-owned, using SwiftUI's native controls and semantic system appearance instead of a product-specific skin.\n\nThe interface should remain predictable after setup. It must not demand attention through decorative surfaces, repeated prompts, or dashboard-like density. Depth comes from native grouped sections and disclosure states, while state changes are expressed through familiar labels, SF Symbols, and semantic colors.",
+    "keyCharacteristics": [
+      "Native macOS appearance",
+      "Quiet, precise state communication",
+      "Grouped settings with progressive disclosure",
+      "System-owned colors and typography",
+      "No browser-specific or custom visual token layer"
+    ],
+    "rules": [
+      {
+        "name": "The Platform Color Rule",
+        "body": "Do not introduce a product-owned palette when the existing SwiftUI system appearance already expresses the required states.",
+        "section": "colors"
+      },
+      {
+        "name": "The Native Type Rule",
+        "body": "Use SwiftUI system typography for controls and labels. Use monospaced system typography only where users inspect log text.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat System Rule",
+        "body": "Never add decorative elevation to a background utility. A new layer must communicate grouping, state, or an actionable boundary.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use native SwiftUI controls and macOS system appearance as the visual source of truth.",
+      "Do use .secondary for supporting status and explanation text.",
+      "Do use the system red semantic color only for errors and destructive meaning.",
+      "Do use SF Symbols when a status or menu action needs an icon.",
+      "Do keep the interface quiet, precise, and predictable after setup.",
+      "Do preserve grouped settings and progressive disclosure for display-specific details."
+    ],
+    "donts": [
+      "Don't add attention-demanding UI after setup.",
+      "Don't introduce repeated prompts or dashboard-like complexity into this background utility.",
+      "Don't invent a custom palette, display font, shadow system, or decorative surface layer without a new product decision.",
+      "Don't replace familiar macOS controls with custom affordances.",
+      "Don't use color as decoration or apply the system error color outside error and destructive states."
+    ]
+  }
+}

@@ -4,6 +4,10 @@
 .cache/
 .agent-cache/
 .claude/
+.vscode/
+.build/
+.swiftpm/
+.DS_Store
 tmp/
 *.tmp
 *.temp
